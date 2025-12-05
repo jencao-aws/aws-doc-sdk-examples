@@ -7,13 +7,14 @@ CLASS ltc_awsex_cl_ctt_actions DEFINITION FOR TESTING DURATION LONG RISK LEVEL D
     CONSTANTS cv_pfl TYPE /aws1/rt_profile_id VALUE 'ZCODE_DEMO'.
 
     CLASS-DATA ao_ctt TYPE REF TO /aws1/if_ctt.
+    CLASS-DATA ao_ccg TYPE REF TO /aws1/if_ccg.
     CLASS-DATA ao_org TYPE REF TO /aws1/if_org.
     CLASS-DATA ao_session TYPE REF TO /aws1/cl_rt_session_base.
     CLASS-DATA ao_ctt_actions TYPE REF TO /awsex/cl_ctt_actions.
 
     " Test resources
     CLASS-DATA av_ou_id TYPE /aws1/orgorganizationalunitid.
-    CLASS-DATA av_ou_arn TYPE /aws1/orgorganizationalunitarn.
+    CLASS-DATA av_ou_arn TYPE /aws1/orgarn.
     CLASS-DATA av_root_id TYPE /aws1/orgrootid.
     CLASS-DATA av_control_arn TYPE /aws1/cttcontrolidentifier.
     CLASS-DATA av_baseline_arn TYPE /aws1/cttarn.
@@ -22,6 +23,7 @@ CLASS ltc_awsex_cl_ctt_actions DEFINITION FOR TESTING DURATION LONG RISK LEVEL D
     CLASS-DATA av_has_landing_zone TYPE abap_bool VALUE abap_false.
 
     METHODS: list_baselines FOR TESTING RAISING /aws1/cx_rt_generic.
+    METHODS: list_controls FOR TESTING RAISING /aws1/cx_rt_generic.
     METHODS: list_landing_zones FOR TESTING RAISING /aws1/cx_rt_generic.
     METHODS: list_enabled_baselines FOR TESTING RAISING /aws1/cx_rt_generic.
     METHODS: list_enabled_controls FOR TESTING RAISING /aws1/cx_rt_generic.
@@ -43,6 +45,7 @@ CLASS ltc_awsex_cl_ctt_actions IMPLEMENTATION.
   METHOD class_setup.
     ao_session = /aws1/cl_rt_session_aws=>create( iv_profile_id = cv_pfl ).
     ao_ctt = /aws1/cl_ctt_factory=>create( ao_session ).
+    ao_ccg = /aws1/cl_ccg_factory=>create( ao_session ).
     ao_org = /aws1/cl_org_factory=>create( ao_session ).
     ao_ctt_actions = NEW /awsex/cl_ctt_actions( ).
 
@@ -50,7 +53,7 @@ CLASS ltc_awsex_cl_ctt_actions IMPLEMENTATION.
     TRY.
         DATA(lo_org_desc) = ao_org->describeorganization( ).
         DATA(lv_org_id) = lo_org_desc->get_organization( )->get_id( ).
-      CATCH /aws1/cx_orgawsorgsnotinuseex.
+      CATCH /aws1/cx_orgawsorgnotinuseex.
         " Create organization with all features
         DATA(lo_org_create) = ao_org->createorganization(
           iv_featureset = 'ALL'
@@ -120,9 +123,16 @@ CLASS ltc_awsex_cl_ctt_actions IMPLEMENTATION.
         " Continue without baseline
     ENDTRY.
 
-    " Use a well-known Control Tower control ARN for testing
-    " AWS-GR_AUDIT_BUCKET_PUBLIC_READ_PROHIBITED is a common detective guardrail
-    av_control_arn = 'arn:aws:controltower:us-east-1::control/AWS-GR_AUDIT_BUCKET_PUBLIC_READ_PROHIBITED'.
+    " Get a control ARN for testing
+    TRY.
+        DATA(lt_controls) = ao_ctt_actions->list_controls( ao_ccg ).
+        IF lines( lt_controls ) > 0.
+          READ TABLE lt_controls INDEX 1 ASSIGNING FIELD-SYMBOL(<control>).
+          av_control_arn = <control>->get_arn( ).
+        ENDIF.
+      CATCH /aws1/cx_rt_generic.
+        " Continue without control
+    ENDTRY.
 
   ENDMETHOD.
 
@@ -167,6 +177,32 @@ CLASS ltc_awsex_cl_ctt_actions IMPLEMENTATION.
       cl_abap_unit_assert=>assert_not_initial(
         act = <baseline>->get_name( )
         msg = |Baseline should have a name|
+      ).
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD list_controls.
+    " Test listing controls from Control Catalog
+    DATA(lt_controls) = ao_ctt_actions->list_controls(
+      io_ccg = ao_ccg
+    ).
+
+    " Assert that we got some results
+    cl_abap_unit_assert=>assert_not_initial(
+      act = lt_controls
+      msg = |Should have returned at least one control|
+    ).
+
+    " Verify the control has expected properties
+    IF lines( lt_controls ) > 0.
+      READ TABLE lt_controls INDEX 1 ASSIGNING FIELD-SYMBOL(<control>).
+      cl_abap_unit_assert=>assert_not_initial(
+        act = <control>->get_arn( )
+        msg = |Control should have an ARN|
+      ).
+      cl_abap_unit_assert=>assert_not_initial(
+        act = <control>->get_name( )
+        msg = |Control should have a name|
       ).
     ENDIF.
   ENDMETHOD.
@@ -235,18 +271,6 @@ CLASS ltc_awsex_cl_ctt_actions IMPLEMENTATION.
           act = abap_true
           msg = |Resource not found is acceptable for list enabled baselines|
         ).
-      CATCH /aws1/cx_cttclientexc INTO DATA(lo_ex2).
-        " Client exception is acceptable
-        cl_abap_unit_assert=>assert_true(
-          act = abap_true
-          msg = |Client exception is acceptable for list enabled baselines|
-        ).
-      CATCH /aws1/cx_cttvalidationex INTO DATA(lo_ex3).
-        " Validation exception is acceptable
-        cl_abap_unit_assert=>assert_true(
-          act = abap_true
-          msg = |Validation exception is acceptable for list enabled baselines|
-        ).
     ENDTRY.
   ENDMETHOD.
 
@@ -300,18 +324,6 @@ CLASS ltc_awsex_cl_ctt_actions IMPLEMENTATION.
           act = abap_true
           msg = |Resource not found is acceptable for list enabled controls|
         ).
-      CATCH /aws1/cx_cttclientexc INTO DATA(lo_ex3).
-        " Client exception is acceptable
-        cl_abap_unit_assert=>assert_true(
-          act = abap_true
-          msg = |Client exception is acceptable for list enabled controls|
-        ).
-      CATCH /aws1/cx_cttvalidationex INTO DATA(lo_ex4).
-        " Validation exception is acceptable
-        cl_abap_unit_assert=>assert_true(
-          act = abap_true
-          msg = |Validation exception is acceptable for list enabled controls|
-        ).
     ENDTRY.
   ENDMETHOD.
 
@@ -346,12 +358,6 @@ CLASS ltc_awsex_cl_ctt_actions IMPLEMENTATION.
           act = abap_true
           msg = |Validation error is acceptable for fake operation ID|
         ).
-      CATCH /aws1/cx_cttclientexc INTO DATA(lo_ex3).
-        " Also acceptable - client error for invalid request
-        cl_abap_unit_assert=>assert_true(
-          act = abap_true
-          msg = |Client exception is acceptable for fake operation ID|
-        ).
     ENDTRY.
   ENDMETHOD.
 
@@ -384,12 +390,6 @@ CLASS ltc_awsex_cl_ctt_actions IMPLEMENTATION.
         cl_abap_unit_assert=>assert_true(
           act = abap_true
           msg = |Validation error is acceptable for fake operation ID|
-        ).
-      CATCH /aws1/cx_cttclientexc INTO DATA(lo_ex3).
-        " Also acceptable - client error for invalid request
-        cl_abap_unit_assert=>assert_true(
-          act = abap_true
-          msg = |Client exception is acceptable for fake operation ID|
         ).
     ENDTRY.
   ENDMETHOD.
