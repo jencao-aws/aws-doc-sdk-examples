@@ -82,14 +82,10 @@ CLASS /awsex/cl_cwt_actions DEFINITION
         !oo_result      TYPE REF TO /aws1/cl_cwtgetmettatsoutput
       RAISING
         /aws1/cx_rt_generic .
-    METHODS describe_alarms_for_metric
+    METHODS get_metric_alarms
       IMPORTING
         !iv_namespace   TYPE /aws1/cwtnamespace
         !iv_metric_name TYPE /aws1/cwtmetricname
-        !it_dimensions  TYPE /aws1/cl_cwtdimension=>tt_dimensions OPTIONAL
-        !iv_statistic   TYPE /aws1/cwtstatistic OPTIONAL
-        !iv_period      TYPE /aws1/cwtperiod OPTIONAL
-        !iv_unit        TYPE /aws1/cwtstandardunit OPTIONAL
       EXPORTING
         !oo_result      TYPE REF TO /aws1/cl_cwtdscalrmsformetri01
       RAISING
@@ -335,29 +331,25 @@ CLASS /AWSEX/CL_CWT_ACTIONS IMPLEMENTATION.
   ENDMETHOD.
 
 
-  METHOD describe_alarms_for_metric.
+  METHOD get_metric_alarms.
 
     CONSTANTS cv_pfl TYPE /aws1/rt_profile_id VALUE 'ZCODE_DEMO'.
 
     DATA(lo_session) = /aws1/cl_rt_session_aws=>create( cv_pfl ).
     DATA(lo_cwt) = /aws1/cl_cwt_factory=>create( lo_session ).
 
-    "snippet-start:[cwt.abapv1.describe_alarms_for_metric]
+    "snippet-start:[cwt.abapv1.get_metric_alarms]
 
     TRY.
         oo_result = lo_cwt->describealarmsformetric(          " oo_result is returned for testing purposes. "
           iv_namespace   = iv_namespace
-          iv_metricname  = iv_metric_name
-          it_dimensions  = it_dimensions
-          iv_statistic   = iv_statistic
-          iv_period      = iv_period
-          iv_unit        = iv_unit ).
+          iv_metricname  = iv_metric_name ).
         MESSAGE 'Alarms for metric retrieved.' TYPE 'I'.
       CATCH /aws1/cx_rt_service_generic INTO DATA(lo_exception).
         DATA(lv_error) = |"{ lo_exception->av_err_code }" - { lo_exception->av_err_msg }|.
         MESSAGE lv_error TYPE 'E'.
     ENDTRY.
-    "snippet-end:[cwt.abapv1.describe_alarms_for_metric]
+    "snippet-end:[cwt.abapv1.get_metric_alarms]
 
   ENDMETHOD.
 ENDCLASS.
