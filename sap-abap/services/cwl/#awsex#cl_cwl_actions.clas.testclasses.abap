@@ -48,7 +48,12 @@ CLASS ltc_awsex_cl_cwl_actions IMPLEMENTATION.
         ao_cwl->tagloggroup(
           iv_loggroupname = av_log_group_name
           it_tags = VALUE /aws1/cl_cwltags_w=>tt_tags(
-            ( NEW /aws1/cl_cwltags_w( iv_key = 'convert_test' iv_value = 'true' ) )
+            (
+              VALUE /aws1/cl_cwltags_w=>ts_tags_maprow(
+                key = 'convert_test'
+                value = NEW /aws1/cl_cwltags_w( 'true' )
+              )
+            )
           )
         ).
       CATCH /aws1/cx_cwlresrcalrdyexistsex.
@@ -70,7 +75,11 @@ CLASS ltc_awsex_cl_cwl_actions IMPLEMENTATION.
 
     " Get current timestamp in milliseconds since epoch
     GET TIME STAMP FIELD DATA(lv_current_timestamp).
-    lv_timestamp = cl_abap_tstmp=>get_unix_ts_from_tstmp( lv_current_timestamp ) * 1000.
+    " Convert ABAP timestamp to Unix timestamp (seconds since 1970-01-01)
+    DATA lv_unix_seconds TYPE i.
+    lv_unix_seconds = ( lv_current_timestamp - 2208988800 ) / 1000000.
+    " Convert to milliseconds
+    lv_timestamp = lv_unix_seconds * 1000.
 
     " Add test log events
     APPEND NEW /aws1/cl_cwlinputlogevent(
@@ -136,9 +145,13 @@ CLASS ltc_awsex_cl_cwl_actions IMPLEMENTATION.
     " Calculate time range for query (last 5 minutes)
     DATA lv_end_time TYPE /aws1/cwltimestamp.
     DATA lv_start_time TYPE /aws1/cwltimestamp.
+    DATA lv_unix_seconds TYPE i.
 
     GET TIME STAMP FIELD DATA(lv_current_timestamp).
-    lv_end_time = cl_abap_tstmp=>get_unix_ts_from_tstmp( lv_current_timestamp ) * 1000.
+    " Convert ABAP timestamp to Unix timestamp (seconds since 1970-01-01)
+    lv_unix_seconds = ( lv_current_timestamp - 2208988800 ) / 1000000.
+    " Convert to milliseconds
+    lv_end_time = lv_unix_seconds * 1000.
     " Start time is 5 minutes before end time
     lv_start_time = lv_end_time - ( 5 * 60 * 1000 ).
 
@@ -170,9 +183,13 @@ CLASS ltc_awsex_cl_cwl_actions IMPLEMENTATION.
     " First, start a query to get a query ID
     DATA lv_end_time TYPE /aws1/cwltimestamp.
     DATA lv_start_time TYPE /aws1/cwltimestamp.
+    DATA lv_unix_seconds TYPE i.
 
     GET TIME STAMP FIELD DATA(lv_current_timestamp).
-    lv_end_time = cl_abap_tstmp=>get_unix_ts_from_tstmp( lv_current_timestamp ) * 1000.
+    " Convert ABAP timestamp to Unix timestamp (seconds since 1970-01-01)
+    lv_unix_seconds = ( lv_current_timestamp - 2208988800 ) / 1000000.
+    " Convert to milliseconds
+    lv_end_time = lv_unix_seconds * 1000.
     " Start time is 5 minutes before end time
     lv_start_time = lv_end_time - ( 5 * 60 * 1000 ).
 
