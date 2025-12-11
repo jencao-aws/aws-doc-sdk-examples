@@ -57,7 +57,17 @@ CLASS ltc_awsex_cl_dyn_actions IMPLEMENTATION.
     ao_session = /aws1/cl_rt_session_aws=>create( iv_profile_id = cv_pfl ).
     ao_dyn = /aws1/cl_dyn_factory=>create( ao_session ).
     ao_dyn_actions = NEW /awsex/cl_dyn_actions( ).
-    av_table_name = |code-example-create-table|.
+    
+    " Generate unique table name for each test to avoid conflicts
+    DATA lv_uuid TYPE sysuuid_c32.
+    TRY.
+        lv_uuid = cl_system_uuid=>create_uuid_c32_static( ).
+      CATCH cx_uuid_error.
+        " Fallback to timestamp if UUID fails
+        GET TIME STAMP FIELD DATA(lv_timestamp).
+        lv_uuid = lv_timestamp.
+    ENDTRY.
+    av_table_name = |dyn-test-{ lv_uuid(8) }|.
   ENDMETHOD.
 
   METHOD teardown.
@@ -274,11 +284,27 @@ CLASS ltc_awsex_cl_dyn_actions IMPLEMENTATION.
 
   METHOD delete_table_local.
     TRY.
+        " First check if table exists
+        ao_dyn->describetable( iv_tablename = av_table_name ).
+        
+        " If we get here, table exists, so delete it
         DATA(lo_resp) = ao_dyn->deletetable( av_table_name ).
+        
+        " Wait for table to be fully deleted
         ao_dyn->get_waiter( )->tablenotexists(
           iv_max_wait_time = 200
           iv_tablename     = av_table_name ).
       CATCH /aws1/cx_dynresourcenotfoundex.
+        " Table doesn't exist, nothing to delete
+      CATCH /aws1/cx_dynresourceinuseex.
+        " Table is already being deleted, wait for it
+        TRY.
+            ao_dyn->get_waiter( )->tablenotexists(
+              iv_max_wait_time = 200
+              iv_tablename     = av_table_name ).
+          CATCH /aws1/cx_rt_service_generic.
+            " Ignore errors during wait
+        ENDTRY.
     ENDTRY.
   ENDMETHOD.
 
@@ -326,8 +352,8 @@ CLASS ltc_awsex_cl_dyn_actions IMPLEMENTATION.
           iv_max_wait_time = 200
           iv_tablename     = av_table_name ).
       CATCH /aws1/cx_rt_service_generic INTO DATA(lo_genericex).
-        DATA(lv_error) = |"{ lo_genericex->av_err_code }" - { lo_genericex->av_err_msg }|.
-        MESSAGE lv_error TYPE 'E'.
+        " Re-raise exception for proper test failure handling
+        RAISE EXCEPTION lo_genericex.
     ENDTRY.
   ENDMETHOD.
 
@@ -347,8 +373,8 @@ CLASS ltc_awsex_cl_dyn_actions IMPLEMENTATION.
           it_keyconditions = lt_key_conditions ).
         ot_items = lo_result->get_items( ).
       CATCH /aws1/cx_rt_service_generic INTO DATA(lo_genericex).
-        DATA(lv_error) = |"{ lo_genericex->av_err_code }" - { lo_genericex->av_err_msg }|.
-        MESSAGE lv_error TYPE 'E'.
+        " Re-raise exception for proper test failure handling
+        RAISE EXCEPTION lo_genericex.
     ENDTRY.
   ENDMETHOD.
 
