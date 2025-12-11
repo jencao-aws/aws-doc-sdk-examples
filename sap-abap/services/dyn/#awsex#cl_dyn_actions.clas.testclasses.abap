@@ -17,7 +17,11 @@ CLASS ltc_awsex_cl_dyn_actions DEFINITION FOR TESTING
       scan_items FOR TESTING RAISING /aws1/cx_rt_generic,
       update_item FOR TESTING RAISING /aws1/cx_rt_generic,
       delete_item FOR TESTING RAISING /aws1/cx_rt_generic,
-      delete_table FOR TESTING RAISING /aws1/cx_rt_generic.
+      delete_table FOR TESTING RAISING /aws1/cx_rt_generic,
+      batch_write_items FOR TESTING RAISING /aws1/cx_rt_generic,
+      batch_get_items FOR TESTING RAISING /aws1/cx_rt_generic,
+      execute_statement FOR TESTING RAISING /aws1/cx_rt_generic,
+      batch_execute_statement FOR TESTING RAISING /aws1/cx_rt_generic.
 
   PRIVATE SECTION.
     CONSTANTS cv_pfl TYPE /aws1/rt_profile_id VALUE 'ZCODE_DEMO'.
@@ -302,6 +306,11 @@ CLASS ltc_awsex_cl_dyn_actions IMPLEMENTATION.
           ( NEW /aws1/cl_dynattributedefn( iv_attributename = 'title'
                                            iv_attributetype = 'S' ) ) ).
 
+        " Tag the table for test resource tracking
+        DATA(lt_tags) = VALUE /aws1/cl_dyntag=>tt_taglist(
+          ( NEW /aws1/cl_dyntag( iv_key = 'convert_test'
+                                  iv_value = 'true' ) ) ).
+
         " Adjust read/write capacities as desired.
         DATA(lo_dynprovthroughput)  = NEW /aws1/cl_dynprovthroughput(
           iv_readcapacityunits = 5
@@ -310,7 +319,8 @@ CLASS ltc_awsex_cl_dyn_actions IMPLEMENTATION.
           it_keyschema = lt_keyschema
           iv_tablename = av_table_name
           it_attributedefinitions = lt_attributedefinitions
-          io_provisionedthroughput = lo_dynprovthroughput ).
+          io_provisionedthroughput = lo_dynprovthroughput
+          it_tags = lt_tags ).
         ao_dyn->get_waiter( )->tableexists(
           iv_max_wait_time = 200
           iv_tablename     = av_table_name ).
@@ -339,5 +349,319 @@ CLASS ltc_awsex_cl_dyn_actions IMPLEMENTATION.
         DATA(lv_error) = |"{ lo_genericex->av_err_code }" - { lo_genericex->av_err_msg }|.
         MESSAGE lv_error TYPE 'E'.
     ENDTRY.
+  ENDMETHOD.
+
+
+  METHOD batch_write_items.
+    create_table_local( ).
+
+    " Prepare multiple items for batch write
+    DATA lt_items TYPE /aws1/cl_dynattributevalue=>tt_itemlist.
+
+    " Item 1
+    DATA(lt_item1) = VALUE /aws1/cl_dynattributevalue=>tt_putiteminputattributemap(
+      ( VALUE /aws1/cl_dynattributevalue=>ts_putiteminputattrmap_maprow(
+       key = 'title' value = NEW /aws1/cl_dynattributevalue( iv_s = 'The Matrix' ) ) )
+      ( VALUE /aws1/cl_dynattributevalue=>ts_putiteminputattrmap_maprow(
+       key = 'year' value = NEW /aws1/cl_dynattributevalue( iv_n = '1999' ) ) )
+      ( VALUE /aws1/cl_dynattributevalue=>ts_putiteminputattrmap_maprow(
+       key = 'rating' value = NEW /aws1/cl_dynattributevalue( iv_n = '8.7' ) ) ) ).
+    APPEND lt_item1 TO lt_items.
+
+    " Item 2
+    DATA(lt_item2) = VALUE /aws1/cl_dynattributevalue=>tt_putiteminputattributemap(
+      ( VALUE /aws1/cl_dynattributevalue=>ts_putiteminputattrmap_maprow(
+       key = 'title' value = NEW /aws1/cl_dynattributevalue( iv_s = 'Inception' ) ) )
+      ( VALUE /aws1/cl_dynattributevalue=>ts_putiteminputattrmap_maprow(
+       key = 'year' value = NEW /aws1/cl_dynattributevalue( iv_n = '2010' ) ) )
+      ( VALUE /aws1/cl_dynattributevalue=>ts_putiteminputattrmap_maprow(
+       key = 'rating' value = NEW /aws1/cl_dynattributevalue( iv_n = '8.8' ) ) ) ).
+    APPEND lt_item2 TO lt_items.
+
+    " Item 3
+    DATA(lt_item3) = VALUE /aws1/cl_dynattributevalue=>tt_putiteminputattributemap(
+      ( VALUE /aws1/cl_dynattributevalue=>ts_putiteminputattrmap_maprow(
+       key = 'title' value = NEW /aws1/cl_dynattributevalue( iv_s = 'Interstellar' ) ) )
+      ( VALUE /aws1/cl_dynattributevalue=>ts_putiteminputattrmap_maprow(
+       key = 'year' value = NEW /aws1/cl_dynattributevalue( iv_n = '2014' ) ) )
+      ( VALUE /aws1/cl_dynattributevalue=>ts_putiteminputattrmap_maprow(
+       key = 'rating' value = NEW /aws1/cl_dynattributevalue( iv_n = '8.6' ) ) ) ).
+    APPEND lt_item3 TO lt_items.
+
+    " Execute batch write
+    DATA(lo_result) = ao_dyn_actions->batch_write_items(
+      iv_table_name = av_table_name
+      it_items = lt_items ).
+
+    " Verify items were written by querying
+    DATA(lt_items_1999) = query_table_local( 1999 ).
+    cl_abap_unit_assert=>assert_equals(
+      exp = 1
+      act = lines( lt_items_1999 )
+      msg = 'Expected 1 movie from 1999' ).
+
+    DATA(lt_items_2010) = query_table_local( 2010 ).
+    cl_abap_unit_assert=>assert_equals(
+      exp = 1
+      act = lines( lt_items_2010 )
+      msg = 'Expected 1 movie from 2010' ).
+
+    MESSAGE 'batch_write_items successful' TYPE 'I'.
+  ENDMETHOD.
+
+
+  METHOD batch_get_items.
+    create_table_local( ).
+
+    " First, add some test data
+    put_item_local( iv_title = 'The Matrix'
+                    iv_year = 1999
+                    iv_rating = '8.7' ).
+    put_item_local( iv_title = 'Inception'
+                    iv_year = 2010
+                    iv_rating = '8.8' ).
+    put_item_local( iv_title = 'Interstellar'
+                    iv_year = 2014
+                    iv_rating = '8.6' ).
+
+    " Prepare keys for batch get
+    DATA lt_keys TYPE /aws1/cl_dynattributevalue=>tt_keylist.
+
+    " Key 1
+    DATA(lt_key1) = VALUE /aws1/cl_dynattributevalue=>tt_key(
+      ( VALUE /aws1/cl_dynattributevalue=>ts_key_maprow(
+       key = 'title' value = NEW /aws1/cl_dynattributevalue( iv_s = 'The Matrix' ) ) )
+      ( VALUE /aws1/cl_dynattributevalue=>ts_key_maprow(
+       key = 'year' value = NEW /aws1/cl_dynattributevalue( iv_n = '1999' ) ) ) ).
+    APPEND lt_key1 TO lt_keys.
+
+    " Key 2
+    DATA(lt_key2) = VALUE /aws1/cl_dynattributevalue=>tt_key(
+      ( VALUE /aws1/cl_dynattributevalue=>ts_key_maprow(
+       key = 'title' value = NEW /aws1/cl_dynattributevalue( iv_s = 'Inception' ) ) )
+      ( VALUE /aws1/cl_dynattributevalue=>ts_key_maprow(
+       key = 'year' value = NEW /aws1/cl_dynattributevalue( iv_n = '2010' ) ) ) ).
+    APPEND lt_key2 TO lt_keys.
+
+    " Execute batch get
+    DATA(lo_result) = ao_dyn_actions->batch_get_items(
+      iv_table_name = av_table_name
+      it_keys = lt_keys ).
+
+    " Verify we got the items back
+    DATA(lt_responses) = lo_result->get_responses( ).
+    READ TABLE lt_responses ASSIGNING FIELD-SYMBOL(<response>) WITH KEY key = av_table_name.
+    IF sy-subrc = 0.
+      DATA(lv_count) = lines( <response>-value ).
+      cl_abap_unit_assert=>assert_equals(
+        exp = 2
+        act = lv_count
+        msg = |Expected 2 items, got { lv_count }| ).
+    ELSE.
+      cl_abap_unit_assert=>fail( msg = 'No response found for table' ).
+    ENDIF.
+
+    MESSAGE 'batch_get_items successful' TYPE 'I'.
+  ENDMETHOD.
+
+
+  METHOD execute_statement.
+    create_table_local( ).
+
+    " Use PartiQL to insert an item
+    DATA(lv_insert_stmt) = |INSERT INTO "{ av_table_name }" VALUE \{'title':?,'year':?,'rating':?\}|.
+    DATA(lt_params_insert) = VALUE /aws1/cl_dynattributevalue=>tt_preparedstatementparameters(
+      ( NEW /aws1/cl_dynattributevalue( iv_s = 'The Dark Knight' ) )
+      ( NEW /aws1/cl_dynattributevalue( iv_n = '2008' ) )
+      ( NEW /aws1/cl_dynattributevalue( iv_n = '9.0' ) ) ).
+
+    ao_dyn_actions->execute_statement(
+      iv_statement = lv_insert_stmt
+      it_parameters = lt_params_insert ).
+
+    " Use PartiQL to select the item
+    DATA(lv_select_stmt) = |SELECT * FROM "{ av_table_name }" WHERE title=? AND year=?|.
+    DATA(lt_params_select) = VALUE /aws1/cl_dynattributevalue=>tt_preparedstatementparameters(
+      ( NEW /aws1/cl_dynattributevalue( iv_s = 'The Dark Knight' ) )
+      ( NEW /aws1/cl_dynattributevalue( iv_n = '2008' ) ) ).
+
+    DATA(lo_result) = ao_dyn_actions->execute_statement(
+      iv_statement = lv_select_stmt
+      it_parameters = lt_params_select ).
+
+    " Verify the item was retrieved
+    DATA(lt_items) = lo_result->get_items( ).
+    cl_abap_unit_assert=>assert_equals(
+      exp = 1
+      act = lines( lt_items )
+      msg = 'Expected to retrieve 1 item' ).
+
+    " Verify the rating
+    READ TABLE lt_items INTO DATA(lt_item) INDEX 1.
+    DATA(lo_rating) = lt_item[ key = 'rating' ]-value.
+    cl_abap_unit_assert=>assert_equals(
+      exp = '9.0'
+      act = lo_rating->ask_n( )
+      msg = 'Expected rating to be 9.0' ).
+
+    " Use PartiQL to update the item
+    DATA(lv_update_stmt) = |UPDATE "{ av_table_name }" SET rating=? WHERE title=? AND year=?|.
+    DATA(lt_params_update) = VALUE /aws1/cl_dynattributevalue=>tt_preparedstatementparameters(
+      ( NEW /aws1/cl_dynattributevalue( iv_n = '9.1' ) )
+      ( NEW /aws1/cl_dynattributevalue( iv_s = 'The Dark Knight' ) )
+      ( NEW /aws1/cl_dynattributevalue( iv_n = '2008' ) ) ).
+
+    ao_dyn_actions->execute_statement(
+      iv_statement = lv_update_stmt
+      it_parameters = lt_params_update ).
+
+    " Use PartiQL to delete the item
+    DATA(lv_delete_stmt) = |DELETE FROM "{ av_table_name }" WHERE title=? AND year=?|.
+    DATA(lt_params_delete) = VALUE /aws1/cl_dynattributevalue=>tt_preparedstatementparameters(
+      ( NEW /aws1/cl_dynattributevalue( iv_s = 'The Dark Knight' ) )
+      ( NEW /aws1/cl_dynattributevalue( iv_n = '2008' ) ) ).
+
+    ao_dyn_actions->execute_statement(
+      iv_statement = lv_delete_stmt
+      it_parameters = lt_params_delete ).
+
+    MESSAGE 'execute_statement successful' TYPE 'I'.
+  ENDMETHOD.
+
+
+  METHOD batch_execute_statement.
+    create_table_local( ).
+
+    " Prepare batch of INSERT statements
+    DATA lt_statements TYPE /aws1/cl_dynbatchstmtrequest=>tt_partiqlbatchrequest.
+
+    " Statement 1
+    DATA(lv_stmt1) = |INSERT INTO "{ av_table_name }" VALUE \{'title':?,'year':?,'rating':?\}|.
+    DATA(lt_params1) = VALUE /aws1/cl_dynattributevalue=>tt_preparedstatementparameters(
+      ( NEW /aws1/cl_dynattributevalue( iv_s = 'Pulp Fiction' ) )
+      ( NEW /aws1/cl_dynattributevalue( iv_n = '1994' ) )
+      ( NEW /aws1/cl_dynattributevalue( iv_n = '8.9' ) ) ).
+    DATA(lo_stmt_req1) = NEW /aws1/cl_dynbatchstmtrequest(
+      iv_statement = lv_stmt1
+      it_parameters = lt_params1 ).
+    APPEND lo_stmt_req1 TO lt_statements.
+
+    " Statement 2
+    DATA(lv_stmt2) = |INSERT INTO "{ av_table_name }" VALUE \{'title':?,'year':?,'rating':?\}|.
+    DATA(lt_params2) = VALUE /aws1/cl_dynattributevalue=>tt_preparedstatementparameters(
+      ( NEW /aws1/cl_dynattributevalue( iv_s = 'Fight Club' ) )
+      ( NEW /aws1/cl_dynattributevalue( iv_n = '1999' ) )
+      ( NEW /aws1/cl_dynattributevalue( iv_n = '8.8' ) ) ).
+    DATA(lo_stmt_req2) = NEW /aws1/cl_dynbatchstmtrequest(
+      iv_statement = lv_stmt2
+      it_parameters = lt_params2 ).
+    APPEND lo_stmt_req2 TO lt_statements.
+
+    " Statement 3
+    DATA(lv_stmt3) = |INSERT INTO "{ av_table_name }" VALUE \{'title':?,'year':?,'rating':?\}|.
+    DATA(lt_params3) = VALUE /aws1/cl_dynattributevalue=>tt_preparedstatementparameters(
+      ( NEW /aws1/cl_dynattributevalue( iv_s = 'Forrest Gump' ) )
+      ( NEW /aws1/cl_dynattributevalue( iv_n = '1994' ) )
+      ( NEW /aws1/cl_dynattributevalue( iv_n = '8.8' ) ) ).
+    DATA(lo_stmt_req3) = NEW /aws1/cl_dynbatchstmtrequest(
+      iv_statement = lv_stmt3
+      it_parameters = lt_params3 ).
+    APPEND lo_stmt_req3 TO lt_statements.
+
+    " Execute batch insert
+    DATA(lo_result) = ao_dyn_actions->batch_execute_statement(
+      it_statements = lt_statements ).
+
+    " Verify items were written
+    DATA(lt_responses) = lo_result->get_responses( ).
+    DATA(lv_success_count) = 0.
+    LOOP AT lt_responses INTO DATA(lo_response).
+      IF lo_response->get_error( ) IS INITIAL.
+        lv_success_count = lv_success_count + 1.
+      ENDIF.
+    ENDLOOP.
+
+    cl_abap_unit_assert=>assert_equals(
+      exp = 3
+      act = lv_success_count
+      msg = |Expected 3 successful statements, got { lv_success_count }| ).
+
+    " Now test batch SELECT
+    CLEAR lt_statements.
+    DATA(lv_select1) = |SELECT * FROM "{ av_table_name }" WHERE title=? AND year=?|.
+    DATA(lt_sel_params1) = VALUE /aws1/cl_dynattributevalue=>tt_preparedstatementparameters(
+      ( NEW /aws1/cl_dynattributevalue( iv_s = 'Pulp Fiction' ) )
+      ( NEW /aws1/cl_dynattributevalue( iv_n = '1994' ) ) ).
+    DATA(lo_sel_req1) = NEW /aws1/cl_dynbatchstmtrequest(
+      iv_statement = lv_select1
+      it_parameters = lt_sel_params1 ).
+    APPEND lo_sel_req1 TO lt_statements.
+
+    DATA(lv_select2) = |SELECT * FROM "{ av_table_name }" WHERE title=? AND year=?|.
+    DATA(lt_sel_params2) = VALUE /aws1/cl_dynattributevalue=>tt_preparedstatementparameters(
+      ( NEW /aws1/cl_dynattributevalue( iv_s = 'Fight Club' ) )
+      ( NEW /aws1/cl_dynattributevalue( iv_n = '1999' ) ) ).
+    DATA(lo_sel_req2) = NEW /aws1/cl_dynbatchstmtrequest(
+      iv_statement = lv_select2
+      it_parameters = lt_sel_params2 ).
+    APPEND lo_sel_req2 TO lt_statements.
+
+    lo_result = ao_dyn_actions->batch_execute_statement(
+      it_statements = lt_statements ).
+
+    lt_responses = lo_result->get_responses( ).
+    cl_abap_unit_assert=>assert_equals(
+      exp = 2
+      act = lines( lt_responses )
+      msg = 'Expected 2 responses from batch select' ).
+
+    " Now test batch UPDATE
+    CLEAR lt_statements.
+    DATA(lv_update1) = |UPDATE "{ av_table_name }" SET rating=? WHERE title=? AND year=?|.
+    DATA(lt_upd_params1) = VALUE /aws1/cl_dynattributevalue=>tt_preparedstatementparameters(
+      ( NEW /aws1/cl_dynattributevalue( iv_n = '9.0' ) )
+      ( NEW /aws1/cl_dynattributevalue( iv_s = 'Pulp Fiction' ) )
+      ( NEW /aws1/cl_dynattributevalue( iv_n = '1994' ) ) ).
+    DATA(lo_upd_req1) = NEW /aws1/cl_dynbatchstmtrequest(
+      iv_statement = lv_update1
+      it_parameters = lt_upd_params1 ).
+    APPEND lo_upd_req1 TO lt_statements.
+
+    lo_result = ao_dyn_actions->batch_execute_statement(
+      it_statements = lt_statements ).
+
+    " Now test batch DELETE
+    CLEAR lt_statements.
+    DATA(lv_delete1) = |DELETE FROM "{ av_table_name }" WHERE title=? AND year=?|.
+    DATA(lt_del_params1) = VALUE /aws1/cl_dynattributevalue=>tt_preparedstatementparameters(
+      ( NEW /aws1/cl_dynattributevalue( iv_s = 'Pulp Fiction' ) )
+      ( NEW /aws1/cl_dynattributevalue( iv_n = '1994' ) ) ).
+    DATA(lo_del_req1) = NEW /aws1/cl_dynbatchstmtrequest(
+      iv_statement = lv_delete1
+      it_parameters = lt_del_params1 ).
+    APPEND lo_del_req1 TO lt_statements.
+
+    DATA(lv_delete2) = |DELETE FROM "{ av_table_name }" WHERE title=? AND year=?|.
+    DATA(lt_del_params2) = VALUE /aws1/cl_dynattributevalue=>tt_preparedstatementparameters(
+      ( NEW /aws1/cl_dynattributevalue( iv_s = 'Fight Club' ) )
+      ( NEW /aws1/cl_dynattributevalue( iv_n = '1999' ) ) ).
+    DATA(lo_del_req2) = NEW /aws1/cl_dynbatchstmtrequest(
+      iv_statement = lv_delete2
+      it_parameters = lt_del_params2 ).
+    APPEND lo_del_req2 TO lt_statements.
+
+    DATA(lv_delete3) = |DELETE FROM "{ av_table_name }" WHERE title=? AND year=?|.
+    DATA(lt_del_params3) = VALUE /aws1/cl_dynattributevalue=>tt_preparedstatementparameters(
+      ( NEW /aws1/cl_dynattributevalue( iv_s = 'Forrest Gump' ) )
+      ( NEW /aws1/cl_dynattributevalue( iv_n = '1994' ) ) ).
+    DATA(lo_del_req3) = NEW /aws1/cl_dynbatchstmtrequest(
+      iv_statement = lv_delete3
+      it_parameters = lt_del_params3 ).
+    APPEND lo_del_req3 TO lt_statements.
+
+    lo_result = ao_dyn_actions->batch_execute_statement(
+      it_statements = lt_statements ).
+
+    MESSAGE 'batch_execute_statement successful' TYPE 'I'.
   ENDMETHOD.
 ENDCLASS.

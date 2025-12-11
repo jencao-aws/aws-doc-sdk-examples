@@ -78,6 +78,37 @@ CLASS /awsex/cl_dyn_actions DEFINITION
         VALUE(oo_scan_result) TYPE REF TO /aws1/cl_dynscanoutput
       RAISING
         /aws1/cx_rt_generic .
+    METHODS batch_write_items
+      IMPORTING
+        VALUE(iv_table_name) TYPE /aws1/dyntablename
+        VALUE(it_items)      TYPE /aws1/cl_dynattributevalue=>tt_itemlist
+      RETURNING
+        VALUE(oo_result)     TYPE REF TO /aws1/cl_dynbatchwriteitemout
+      RAISING
+        /aws1/cx_rt_generic .
+    METHODS batch_get_items
+      IMPORTING
+        VALUE(iv_table_name) TYPE /aws1/dyntablename
+        VALUE(it_keys)       TYPE /aws1/cl_dynattributevalue=>tt_keylist
+      RETURNING
+        VALUE(oo_result)     TYPE REF TO /aws1/cl_dynbatchgetitemoutput
+      RAISING
+        /aws1/cx_rt_generic .
+    METHODS execute_statement
+      IMPORTING
+        VALUE(iv_statement) TYPE /aws1/dynpartiqlstatement
+        VALUE(it_parameters) TYPE /aws1/cl_dynattributevalue=>tt_preparedstatementparameters OPTIONAL
+      RETURNING
+        VALUE(oo_result)    TYPE REF TO /aws1/cl_dynexecutestmtoutput
+      RAISING
+        /aws1/cx_rt_generic .
+    METHODS batch_execute_statement
+      IMPORTING
+        VALUE(it_statements) TYPE /aws1/cl_dynbatchstmtrequest=>tt_partiqlbatchrequest
+      RETURNING
+        VALUE(oo_result)     TYPE REF TO /aws1/cl_dynbtcexecutestmtout
+      RAISING
+        /aws1/cx_rt_generic .
 ENDCLASS.
 
 
@@ -369,5 +400,147 @@ CLASS /AWSEX/CL_DYN_ACTIONS IMPLEMENTATION.
     ENDTRY.
     " snippet-end:[dyn.abapv1.update_item]
 
+  ENDMETHOD.
+
+
+  METHOD batch_write_items.
+    CONSTANTS cv_pfl TYPE /aws1/rt_profile_id VALUE 'ZCODE_DEMO'.
+
+    DATA(lo_session) = /aws1/cl_rt_session_aws=>create( cv_pfl ).
+    DATA(lo_dyn) = /aws1/cl_dyn_factory=>create( lo_session ).
+
+    " snippet-start:[dyn.abapv1.batch_write_items]
+    TRY.
+        " Prepare write requests for batch operation
+        DATA lt_write_requests TYPE /aws1/cl_dynwriterequest=>tt_writerequests.
+        LOOP AT it_items INTO DATA(lo_item).
+          DATA(lo_put_request) = NEW /aws1/cl_dynputrequest( it_item = lo_item ).
+          DATA(lo_write_request) = NEW /aws1/cl_dynwriterequest( io_putrequest = lo_put_request ).
+          APPEND lo_write_request TO lt_write_requests.
+        ENDLOOP.
+
+        " Create request items map
+        DATA(lt_request_items) = VALUE /aws1/cl_dynwriterequest=>tt_batchwriteitemrequestmap(
+          ( VALUE /aws1/cl_dynwriterequest=>ts_batchwriteitemreqmap_maprow(
+              key = iv_table_name
+              value = lt_write_requests ) ) ).
+
+        " Execute batch write
+        oo_result = lo_dyn->batchwriteitem(
+          it_requestitems = lt_request_items ).
+
+        DATA(lv_unprocessed) = lines( oo_result->get_unprocesseditems( ) ).
+        IF lv_unprocessed > 0.
+          MESSAGE |{ lv_unprocessed } items were unprocessed| TYPE 'I'.
+        ELSE.
+          MESSAGE 'All items written successfully to table' && iv_table_name TYPE 'I'.
+        ENDIF.
+      CATCH /aws1/cx_dynresourcenotfoundex.
+        MESSAGE 'The table does not exist' TYPE 'E'.
+      CATCH /aws1/cx_dynprovthruputexcdex.
+        MESSAGE 'Provisioned throughput exceeded' TYPE 'E'.
+    ENDTRY.
+    " snippet-end:[dyn.abapv1.batch_write_items]
+  ENDMETHOD.
+
+
+  METHOD batch_get_items.
+    CONSTANTS cv_pfl TYPE /aws1/rt_profile_id VALUE 'ZCODE_DEMO'.
+
+    DATA(lo_session) = /aws1/cl_rt_session_aws=>create( cv_pfl ).
+    DATA(lo_dyn) = /aws1/cl_dyn_factory=>create( lo_session ).
+
+    " snippet-start:[dyn.abapv1.batch_get_items]
+    TRY.
+        " Prepare keys and attributes structure for batch get
+        DATA(lo_keys_and_attrs) = NEW /aws1/cl_dynkeysandattributes( it_keys = it_keys ).
+
+        " Create request items map
+        DATA(lt_request_items) = VALUE /aws1/cl_dynkeysandattributes=>tt_batchgetitemrequestmap(
+          ( VALUE /aws1/cl_dynkeysandattributes=>ts_batchgetitemreqmap_maprow(
+              key = iv_table_name
+              value = lo_keys_and_attrs ) ) ).
+
+        " Execute batch get
+        oo_result = lo_dyn->batchgetitem(
+          it_requestitems = lt_request_items ).
+
+        " Process responses
+        DATA(lt_responses) = oo_result->get_responses( ).
+        LOOP AT lt_responses ASSIGNING FIELD-SYMBOL(<response>).
+          DATA(lv_item_count) = lines( <response>-value ).
+          MESSAGE |Retrieved { lv_item_count } items from table { <response>-key }| TYPE 'I'.
+        ENDLOOP.
+
+        " Check for unprocessed keys
+        DATA(lt_unprocessed) = oo_result->get_unprocessedkeys( ).
+        IF lines( lt_unprocessed ) > 0.
+          MESSAGE 'Some keys were unprocessed' TYPE 'I'.
+        ENDIF.
+      CATCH /aws1/cx_dynresourcenotfoundex.
+        MESSAGE 'The table does not exist' TYPE 'E'.
+      CATCH /aws1/cx_dynprovthruputexcdex.
+        MESSAGE 'Provisioned throughput exceeded' TYPE 'E'.
+    ENDTRY.
+    " snippet-end:[dyn.abapv1.batch_get_items]
+  ENDMETHOD.
+
+
+  METHOD execute_statement.
+    CONSTANTS cv_pfl TYPE /aws1/rt_profile_id VALUE 'ZCODE_DEMO'.
+
+    DATA(lo_session) = /aws1/cl_rt_session_aws=>create( cv_pfl ).
+    DATA(lo_dyn) = /aws1/cl_dyn_factory=>create( lo_session ).
+
+    " snippet-start:[dyn.abapv1.execute_statement]
+    TRY.
+        " Execute PartiQL statement
+        oo_result = lo_dyn->executestatement(
+          iv_statement = iv_statement
+          it_parameters = it_parameters ).
+
+        " Process results
+        DATA(lt_items) = oo_result->get_items( ).
+        DATA(lv_count) = lines( lt_items ).
+        MESSAGE |PartiQL statement executed. { lv_count } items returned| TYPE 'I'.
+
+      CATCH /aws1/cx_dynresourcenotfoundex.
+        MESSAGE 'The table does not exist' TYPE 'E'.
+      CATCH /aws1/cx_dyncondalcheckfaile00.
+        MESSAGE 'A condition specified in the operation could not be evaluated' TYPE 'E'.
+      CATCH /aws1/cx_dyntransactconflictex.
+        MESSAGE 'Another transaction is using the item' TYPE 'E'.
+    ENDTRY.
+    " snippet-end:[dyn.abapv1.execute_statement]
+  ENDMETHOD.
+
+
+  METHOD batch_execute_statement.
+    CONSTANTS cv_pfl TYPE /aws1/rt_profile_id VALUE 'ZCODE_DEMO'.
+
+    DATA(lo_session) = /aws1/cl_rt_session_aws=>create( cv_pfl ).
+    DATA(lo_dyn) = /aws1/cl_dyn_factory=>create( lo_session ).
+
+    " snippet-start:[dyn.abapv1.batch_execute_statement]
+    TRY.
+        " Execute batch of PartiQL statements
+        oo_result = lo_dyn->batchexecutestatement(
+          it_statements = it_statements ).
+
+        " Process responses
+        DATA(lt_responses) = oo_result->get_responses( ).
+        DATA(lv_success_count) = 0.
+        LOOP AT lt_responses INTO DATA(lo_response).
+          IF lo_response->get_error( ) IS INITIAL.
+            lv_success_count = lv_success_count + 1.
+          ENDIF.
+        ENDLOOP.
+
+        MESSAGE |Batch executed: { lv_success_count } of { lines( lt_responses ) } statements successful| TYPE 'I'.
+
+      CATCH /aws1/cx_dynresourcenotfoundex.
+        MESSAGE 'The table does not exist' TYPE 'E'.
+    ENDTRY.
+    " snippet-end:[dyn.abapv1.batch_execute_statement]
   ENDMETHOD.
 ENDCLASS.
