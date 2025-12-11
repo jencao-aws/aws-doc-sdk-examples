@@ -456,8 +456,8 @@ CLASS /AWSEX/CL_DYN_ACTIONS IMPLEMENTATION.
         DATA(lo_keys_and_attrs) = NEW /aws1/cl_dynkeysandattributes( it_keys = it_keys ).
 
         " Create request items map
-        DATA(lt_request_items) = VALUE /aws1/cl_dynkeysandattributes=>tt_batchgetitemrequestmap(
-          ( VALUE /aws1/cl_dynkeysandattributes=>ts_batchgetitemreqmap_maprow(
+        DATA(lt_request_items) = VALUE /aws1/cl_dynkeysandattributes=>tt_batchgetrequestmap(
+          ( VALUE /aws1/cl_dynkeysandattributes=>ts_batchgetrequestmap_maprow(
               key = iv_table_name
               value = lo_keys_and_attrs ) ) ).
 
