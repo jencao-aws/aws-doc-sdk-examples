@@ -1,6 +1,5 @@
 " Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 " SPDX-License-Identifier: Apache-2.0
-
 CLASS /awsex/cl_asc_actions DEFINITION
   PUBLIC
   FINAL
@@ -17,8 +16,7 @@ CLASS /awsex/cl_asc_actions DEFINITION
     METHODS create_group
       IMPORTING
         !iv_group_name           TYPE /aws1/ascxmlstringmaxlen255
-        !it_group_zones          TYPE /aws1/cl_ascazs_w=>tt_availabilityzones OPTIONAL
-        !iv_vpc_zone_identifier  TYPE /aws1/ascxmlstringmaxlen2047 OPTIONAL
+        !it_group_zones          TYPE /aws1/cl_ascazs_w=>tt_availabilityzones
         !iv_launch_template_name TYPE /aws1/asclaunchtemplatename
         !iv_min_size             TYPE /aws1/ascautoscgroupminsize
         !iv_max_size             TYPE /aws1/ascautoscgroupmaxsize
@@ -101,15 +99,6 @@ CLASS /awsex/cl_asc_actions DEFINITION
       RAISING
         /aws1/cx_rt_generic.
 
-    " Helper method to get instances in a group
-    METHODS get_group_instances
-      IMPORTING
-        !iv_group_name     TYPE /aws1/ascxmlstringmaxlen255
-      RETURNING
-        VALUE(rt_instances) TYPE /aws1/cl_ascinstance=>tt_instances
-      RAISING
-        /aws1/cx_rt_generic.
-
   PROTECTED SECTION.
   PRIVATE SECTION.
     DATA ao_asc TYPE REF TO /aws1/if_asc.
@@ -135,7 +124,6 @@ CLASS /AWSEX/CL_ASC_ACTIONS IMPLEMENTATION.
     " Example: iv_launch_template_name = 'my-launch-template'
     " Example: iv_min_size = 1
     " Example: iv_max_size = 3
-    " Example: iv_vpc_zone_identifier = 'subnet-12345,subnet-67890' (for VPC)
     
     TRY.
         " Create launch template specification
@@ -144,24 +132,12 @@ CLASS /AWSEX/CL_ASC_ACTIONS IMPLEMENTATION.
           iv_version = '$Default' ).
 
         " Create the Auto Scaling group
-        " Use VPCZoneIdentifier for VPC subnets, or AvailabilityZones for EC2-Classic
-        IF iv_vpc_zone_identifier IS NOT INITIAL.
-          " VPC-based deployment - use subnet IDs
-          ao_asc->createautoscalinggroup(
-            iv_autoscalinggroupname = iv_group_name
-            iv_vpczoneidentifier = iv_vpc_zone_identifier
-            io_launchtemplate = lo_launch_template
-            iv_minsize = iv_min_size
-            iv_maxsize = iv_max_size ).
-        ELSE.
-          " EC2-Classic or default VPC - use availability zones
-          ao_asc->createautoscalinggroup(
-            iv_autoscalinggroupname = iv_group_name
-            it_availabilityzones = it_group_zones
-            io_launchtemplate = lo_launch_template
-            iv_minsize = iv_min_size
-            iv_maxsize = iv_max_size ).
-        ENDIF.
+        ao_asc->createautoscalinggroup(
+          iv_autoscalinggroupname = iv_group_name
+          it_availabilityzones = it_group_zones
+          io_launchtemplate = lo_launch_template
+          iv_minsize = iv_min_size
+          iv_maxsize = iv_max_size ).
 
         " Wait for the group to be created (simplified - in production use proper polling)
         WAIT UP TO 10 SECONDS.
@@ -169,11 +145,11 @@ CLASS /AWSEX/CL_ASC_ACTIONS IMPLEMENTATION.
         MESSAGE 'Auto Scaling group created successfully' TYPE 'I'.
 
       CATCH /aws1/cx_ascalreadyexistsfault INTO DATA(lo_already_exists).
-        RAISE EXCEPTION lo_already_exists.
+        MESSAGE lo_already_exists->get_text( ) TYPE 'E'.
       CATCH /aws1/cx_asclimitexceededfault INTO DATA(lo_limit_exceeded).
-        RAISE EXCEPTION lo_limit_exceeded.
+        MESSAGE lo_limit_exceeded->get_text( ) TYPE 'E'.
       CATCH /aws1/cx_rt_generic INTO DATA(lo_generic_exception).
-        RAISE EXCEPTION lo_generic_exception.
+        MESSAGE lo_generic_exception->get_text( ) TYPE 'E'.
     ENDTRY.
     " snippet-end:[asc.abapv1.create_group]
   ENDMETHOD.
@@ -193,11 +169,11 @@ CLASS /AWSEX/CL_ASC_ACTIONS IMPLEMENTATION.
         MESSAGE 'Auto Scaling group updated successfully' TYPE 'I'.
 
       CATCH /aws1/cx_ascresrccontionfault INTO DATA(lo_contention).
-        RAISE EXCEPTION lo_contention.
+        MESSAGE lo_contention->get_text( ) TYPE 'E'.
       CATCH /aws1/cx_ascscaactivityinprg00 INTO DATA(lo_activity_in_progress).
-        RAISE EXCEPTION lo_activity_in_progress.
+        MESSAGE lo_activity_in_progress->get_text( ) TYPE 'E'.
       CATCH /aws1/cx_rt_generic INTO DATA(lo_generic_exception).
-        RAISE EXCEPTION lo_generic_exception.
+        MESSAGE lo_generic_exception->get_text( ) TYPE 'E'.
     ENDTRY.
     " snippet-end:[asc.abapv1.update_group]
   ENDMETHOD.
@@ -217,11 +193,11 @@ CLASS /AWSEX/CL_ASC_ACTIONS IMPLEMENTATION.
         MESSAGE 'Auto Scaling group deleted successfully' TYPE 'I'.
 
       CATCH /aws1/cx_ascscaactivityinprg00 INTO DATA(lo_activity_in_progress).
-        RAISE EXCEPTION lo_activity_in_progress.
+        MESSAGE lo_activity_in_progress->get_text( ) TYPE 'E'.
       CATCH /aws1/cx_ascresourceinusefault INTO DATA(lo_resource_in_use).
-        RAISE EXCEPTION lo_resource_in_use.
+        MESSAGE lo_resource_in_use->get_text( ) TYPE 'E'.
       CATCH /aws1/cx_rt_generic INTO DATA(lo_generic_exception).
-        RAISE EXCEPTION lo_generic_exception.
+        MESSAGE lo_generic_exception->get_text( ) TYPE 'E'.
     ENDTRY.
     " snippet-end:[asc.abapv1.delete_group]
   ENDMETHOD.
@@ -255,9 +231,9 @@ CLASS /AWSEX/CL_ASC_ACTIONS IMPLEMENTATION.
         MESSAGE 'Auto Scaling group information retrieved successfully' TYPE 'I'.
 
       CATCH /aws1/cx_ascresrccontionfault INTO DATA(lo_contention).
-        RAISE EXCEPTION lo_contention.
+        MESSAGE lo_contention->get_text( ) TYPE 'E'.
       CATCH /aws1/cx_rt_generic INTO DATA(lo_generic_exception).
-        RAISE EXCEPTION lo_generic_exception.
+        MESSAGE lo_generic_exception->get_text( ) TYPE 'E'.
     ENDTRY.
     " snippet-end:[asc.abapv1.describe_group]
   ENDMETHOD.
@@ -278,11 +254,11 @@ CLASS /AWSEX/CL_ASC_ACTIONS IMPLEMENTATION.
         MESSAGE 'Instance terminated successfully' TYPE 'I'.
 
       CATCH /aws1/cx_ascscaactivityinprg00 INTO DATA(lo_activity_in_progress).
-        RAISE EXCEPTION lo_activity_in_progress.
+        MESSAGE lo_activity_in_progress->get_text( ) TYPE 'E'.
       CATCH /aws1/cx_ascresrccontionfault INTO DATA(lo_contention).
-        RAISE EXCEPTION lo_contention.
+        MESSAGE lo_contention->get_text( ) TYPE 'E'.
       CATCH /aws1/cx_rt_generic INTO DATA(lo_generic_exception).
-        RAISE EXCEPTION lo_generic_exception.
+        MESSAGE lo_generic_exception->get_text( ) TYPE 'E'.
     ENDTRY.
     " snippet-end:[asc.abapv1.terminate_instance]
   ENDMETHOD.
@@ -302,9 +278,9 @@ CLASS /AWSEX/CL_ASC_ACTIONS IMPLEMENTATION.
         MESSAGE 'Desired capacity set successfully' TYPE 'I'.
 
       CATCH /aws1/cx_ascscaactivityinprg00 INTO DATA(lo_activity_in_progress).
-        RAISE EXCEPTION lo_activity_in_progress.
+        MESSAGE lo_activity_in_progress->get_text( ) TYPE 'E'.
       CATCH /aws1/cx_rt_generic INTO DATA(lo_generic_exception).
-        RAISE EXCEPTION lo_generic_exception.
+        MESSAGE lo_generic_exception->get_text( ) TYPE 'E'.
     ENDTRY.
     " snippet-end:[asc.abapv1.set_desired_capacity]
   ENDMETHOD.
@@ -323,9 +299,9 @@ CLASS /AWSEX/CL_ASC_ACTIONS IMPLEMENTATION.
         MESSAGE 'Auto Scaling instances information retrieved successfully' TYPE 'I'.
 
       CATCH /aws1/cx_ascresrccontionfault INTO DATA(lo_contention).
-        RAISE EXCEPTION lo_contention.
+        MESSAGE lo_contention->get_text( ) TYPE 'E'.
       CATCH /aws1/cx_rt_generic INTO DATA(lo_generic_exception).
-        RAISE EXCEPTION lo_generic_exception.
+        MESSAGE lo_generic_exception->get_text( ) TYPE 'E'.
     ENDTRY.
     " snippet-end:[asc.abapv1.describe_instances]
   ENDMETHOD.
@@ -344,9 +320,9 @@ CLASS /AWSEX/CL_ASC_ACTIONS IMPLEMENTATION.
         MESSAGE 'Scaling activities retrieved successfully' TYPE 'I'.
 
       CATCH /aws1/cx_ascresrccontionfault INTO DATA(lo_contention).
-        RAISE EXCEPTION lo_contention.
+        MESSAGE lo_contention->get_text( ) TYPE 'E'.
       CATCH /aws1/cx_rt_generic INTO DATA(lo_generic_exception).
-        RAISE EXCEPTION lo_generic_exception.
+        MESSAGE lo_generic_exception->get_text( ) TYPE 'E'.
     ENDTRY.
     " snippet-end:[asc.abapv1.describe_scaling_activities]
   ENDMETHOD.
@@ -366,9 +342,9 @@ CLASS /AWSEX/CL_ASC_ACTIONS IMPLEMENTATION.
         MESSAGE 'Metrics collection enabled successfully' TYPE 'I'.
 
       CATCH /aws1/cx_ascresrccontionfault INTO DATA(lo_contention).
-        RAISE EXCEPTION lo_contention.
+        MESSAGE lo_contention->get_text( ) TYPE 'E'.
       CATCH /aws1/cx_rt_generic INTO DATA(lo_generic_exception).
-        RAISE EXCEPTION lo_generic_exception.
+        MESSAGE lo_generic_exception->get_text( ) TYPE 'E'.
     ENDTRY.
     " snippet-end:[asc.abapv1.enable_metrics]
   ENDMETHOD.
@@ -385,28 +361,10 @@ CLASS /AWSEX/CL_ASC_ACTIONS IMPLEMENTATION.
         MESSAGE 'Metrics collection disabled successfully' TYPE 'I'.
 
       CATCH /aws1/cx_ascresrccontionfault INTO DATA(lo_contention).
-        RAISE EXCEPTION lo_contention.
+        MESSAGE lo_contention->get_text( ) TYPE 'E'.
       CATCH /aws1/cx_rt_generic INTO DATA(lo_generic_exception).
-        RAISE EXCEPTION lo_generic_exception.
+        MESSAGE lo_generic_exception->get_text( ) TYPE 'E'.
     ENDTRY.
     " snippet-end:[asc.abapv1.disable_metrics]
-  ENDMETHOD.
-
-
-  METHOD get_group_instances.
-    DATA lt_group_names TYPE /aws1/cl_ascautoscgroupnames_w=>tt_autoscalinggroupnames.
-    DATA lo_group_name TYPE REF TO /aws1/cl_ascautoscgroupnames_w.
-
-    CREATE OBJECT lo_group_name EXPORTING iv_value = iv_group_name.
-    APPEND lo_group_name TO lt_group_names.
-
-    DATA(lo_output) = ao_asc->describeautoscalinggroups(
-      it_autoscalinggroupnames = lt_group_names ).
-
-    DATA(lt_groups) = lo_output->get_autoscalinggroups( ).
-    IF lines( lt_groups ) > 0.
-      READ TABLE lt_groups INDEX 1 INTO DATA(lo_group).
-      rt_instances = lo_group->get_instances( ).
-    ENDIF.
   ENDMETHOD.
 ENDCLASS.
