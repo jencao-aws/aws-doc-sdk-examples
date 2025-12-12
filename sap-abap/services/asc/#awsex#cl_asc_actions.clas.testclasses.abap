@@ -50,125 +50,34 @@ ENDCLASS.
 
 CLASS ltc_awsex_cl_asc_actions IMPLEMENTATION.
 
-  METHOD find_default_vpc.
-    DATA lt_vpcs TYPE /aws1/cl_ec2vpc=>tt_vpclist.
-    DATA lo_vpc TYPE REF TO /aws1/cl_ec2vpc.
-    DATA lt_subnets TYPE /aws1/cl_ec2subnet=>tt_subnetlist.
-    DATA lo_subnet TYPE REF TO /aws1/cl_ec2subnet.
+  METHOD class_setup.
+    ao_session = /aws1/cl_rt_session_aws=>create( iv_profile_id = cv_pfl ).
+    ao_asc = /aws1/cl_asc_factory=>create( ao_session ).
+    ao_ec2 = /aws1/cl_ec2_factory=>create( ao_session ).
+    ao_asc_actions = NEW /awsex/cl_asc_actions( ao_session ).
 
-    " Find the default VPC
-    DATA(lo_vpcs_result) = ao_ec2->describevpcs( ).
-    lt_vpcs = lo_vpcs_result->get_vpcs( ).
+    " Generate unique names using utility function
+    DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
+    av_group_name = |asc-test-group-{ lv_uuid }|.
+    av_launch_template_name = |asc-test-tmpl-{ lv_uuid }|.
 
-    LOOP AT lt_vpcs INTO lo_vpc.
-      IF lo_vpc->get_isdefault( ) = abap_true.
-        av_default_vpc_id = lo_vpc->get_vpcid( ).
-        " Found default VPC, now get a subnet from it
-        DATA(lo_subnets_result) = ao_ec2->describesubnets( ).
-        lt_subnets = lo_subnets_result->get_subnets( ).
-
-        LOOP AT lt_subnets INTO lo_subnet.
-          IF lo_subnet->get_vpcid( ) = av_default_vpc_id.
-            rv_subnet_id = lo_subnet->get_subnetid( ).
-            EXIT.
-          ENDIF.
-        ENDLOOP.
-        EXIT.
-      ENDIF.
-    ENDLOOP.
-
-    IF rv_subnet_id IS INITIAL.
-      cl_abap_unit_assert=>fail( 'No default VPC found. Cannot proceed with Auto Scaling tests.' ).
-    ENDIF.
-  ENDMETHOD.
-
-  METHOD wait_for_group_ready.
-    DATA lv_retry TYPE i VALUE 0.
-    DATA lv_max_retries TYPE i VALUE 60.
-    DATA lv_ready TYPE abap_bool VALUE abap_false.
-    DATA lt_group_names TYPE /aws1/cl_ascautoscgroupnames_w=>tt_autoscalinggroupnames.
-    DATA lo_group_name TYPE REF TO /aws1/cl_ascautoscgroupnames_w.
-    DATA lt_instances TYPE /aws1/cl_ascinstance=>tt_instances.
-    DATA lo_instance TYPE REF TO /aws1/cl_ascinstance.
-
-    CREATE OBJECT lo_group_name EXPORTING iv_value = iv_group_name.
-    APPEND lo_group_name TO lt_group_names.
-
-    WHILE lv_retry < lv_max_retries AND lv_ready = abap_false.
-      TRY.
-          DATA(lo_output) = ao_asc->describeautoscalinggroups(
-            it_autoscalinggroupnames = lt_group_names ).
-
-          DATA(lt_groups) = lo_output->get_autoscalinggroups( ).
-          IF lines( lt_groups ) > 0.
-            READ TABLE lt_groups INDEX 1 INTO DATA(lo_group).
-            lt_instances = lo_group->get_instances( ).
-
-            IF lines( lt_instances ) > 0.
-              lv_ready = abap_true.
-              LOOP AT lt_instances INTO lo_instance.
-                IF lo_instance->get_lifecyclestate( ) <> iv_expected_state.
-                  lv_ready = abap_false.
-                  EXIT.
-                ENDIF.
-              ENDLOOP.
-            ELSEIF lo_group->get_desiredcapacity( ) = 0.
-              " If desired capacity is 0, no instances expected
-              lv_ready = abap_true.
-            ENDIF.
-          ENDIF.
-        CATCH /aws1/cx_rt_generic.
-          " Continue retrying
-      ENDTRY.
-
-      IF lv_ready = abap_false.
-        WAIT UP TO 5 SECONDS.
-        lv_retry = lv_retry + 1.
-      ENDIF.
-    ENDWHILE.
-
-    IF lv_ready = abap_false.
-      cl_abap_unit_assert=>fail( |Auto Scaling group { iv_group_name } instances did not reach { iv_expected_state } state within timeout| ).
-    ENDIF.
-  ENDMETHOD.
-
-  METHOD create_launch_template.
+    " Create a launch template for testing
     DATA lt_tags TYPE /aws1/cl_ec2tag=>tt_taglist.
     DATA lo_tag TYPE REF TO /aws1/cl_ec2tag.
-    DATA lo_tag_spec TYPE REF TO /aws1/cl_ec2launchtmpltgspec00.
-    DATA lt_tag_specs TYPE /aws1/cl_ec2launchtmpltgspec00=>tt_launchtmpltagspecreqlist.
-    DATA lo_template_data TYPE REF TO /aws1/cl_ec2reqlaunchtmpldata.
-    DATA lo_create_result TYPE REF TO /aws1/cl_ec2crelaunchtmplrslt.
-
-    " Create tags for the launch template
     lo_tag = NEW /aws1/cl_ec2tag(
       iv_key = 'convert_test'
       iv_value = 'true' ).
     APPEND lo_tag TO lt_tags.
 
-    lo_tag_spec = NEW /aws1/cl_ec2launchtmpltgspec00(
+    DATA(lo_tag_spec) = NEW /aws1/cl_ec2launchtmpltagspec(
       iv_resourcetype = 'instance'
       it_tags = lt_tags ).
+    DATA lt_tag_specs TYPE /aws1/cl_ec2launchtmpltagspec=>tt_launchtemplatetagspecificationlist.
     APPEND lo_tag_spec TO lt_tag_specs.
 
-    " Get region-specific AMI ID
-    DATA(lv_region) = ao_session->get_region( ).
-    DATA lv_ami_id TYPE string.
-
-    CASE lv_region.
-      WHEN 'us-west-2'.
-        lv_ami_id = 'ami-0a38c1c38a15fed74'.
-      WHEN 'us-east-1'.
-        lv_ami_id = 'ami-0aa7d40eeae50c9a9'.
-      WHEN 'eu-west-1'.
-        lv_ami_id = 'ami-0d940f23d527c3ab1'.
-      WHEN OTHERS.
-        lv_ami_id = 'ami-0a38c1c38a15fed74'.
-    ENDCASE.
-
-    " Create launch template data
-    lo_template_data = NEW /aws1/cl_ec2reqlaunchtmpldata(
-      iv_imageid = lv_ami_id
+    " Use Amazon Linux 2023 AMI (this is a commonly available AMI)
+    DATA(lo_template_data) = NEW /aws1/cl_ec2reqlaunchtmpldata(
+      iv_imageid = 'ami-0aa28dab1f2852040'  " Amazon Linux 2023 in us-east-1
       iv_instancetype = 't2.micro'
       it_tagspecifications = lt_tag_specs ).
 
@@ -181,10 +90,13 @@ CLASS ltc_awsex_cl_asc_actions IMPLEMENTATION.
       CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
         " If creation failed, try to get existing template (may exist from previous failed run)
         TRY.
-            DATA(lo_describe_result) = ao_ec2->describelaunchtemplates(
-              it_launchtemplatenames = VALUE /aws1/cl_ec2launchtmplnamest00=>tt_launchtmplnamestringlist(
-                ( NEW /aws1/cl_ec2launchtmplnamest00( iv_value = iv_template_name ) ) ) ).
-            DATA(lt_templates) = lo_describe_result->get_launchtemplates( ).
+            DATA lt_names TYPE /aws1/cl_ec2launchtmplnamest00=>tt_launchtmplnamestringlist.
+            DATA lo_name TYPE REF TO /aws1/cl_ec2launchtmplnamest00.
+            CREATE OBJECT lo_name EXPORTING iv_value = av_launch_template_name.
+            APPEND lo_name TO lt_names.
+            DATA(lo_describe) = ao_ec2->describelaunchtemplates(
+              it_launchtemplatenames = lt_names ).
+            DATA(lt_templates) = lo_describe->get_launchtemplates( ).
             IF lines( lt_templates ) > 0.
               READ TABLE lt_templates INDEX 1 INTO DATA(lo_template).
               rv_template_id = lo_template->get_launchtemplateid( ).
