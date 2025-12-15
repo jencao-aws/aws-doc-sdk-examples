@@ -89,15 +89,22 @@ CLASS /AWSEX/CL_STS_ACTIONS IMPLEMENTATION.
     DATA(lo_sts) = /aws1/cl_sts_factory=>create( lo_session ).
 
     " snippet-start:[sts.abapv1.get_session_token]
+    " NOTE: GetSessionToken can only be called with long-term IAM user credentials
+    " It cannot be called with temporary credentials (like those from AssumeRole)
+    " This is typically used when you want to add MFA protection to IAM user credentials
     TRY.
         " Only pass MFA parameters if they are provided
         IF iv_serial_number IS NOT INITIAL AND iv_token_code IS NOT INITIAL.
+          " Example with MFA: Requires MFA device serial number and current token code
+          " iv_serial_number = 'arn:aws:iam::123456789012:mfa/user'
+          " iv_token_code = '123456'
           oo_result = lo_sts->getsessiontoken(      " oo_result is returned for testing purposes. "
             iv_serialnumber = iv_serial_number
             iv_tokencode = iv_token_code
             iv_durationseconds = iv_duration_seconds
           ).
         ELSE.
+          " Example without MFA
           oo_result = lo_sts->getsessiontoken(      " oo_result is returned for testing purposes. "
             iv_durationseconds = iv_duration_seconds
           ).

@@ -16,8 +16,12 @@ CLASS ltc_awsex_cl_sts_actions DEFINITION FOR TESTING DURATION SHORT RISK LEVEL 
     CLASS-DATA av_role_name TYPE /aws1/iamrolenametype.
     CLASS-DATA av_policy_arn TYPE /aws1/iamarntype.
 
-    METHODS: assume_role FOR TESTING RAISING /aws1/cx_rt_generic,
-      get_session_token FOR TESTING RAISING /aws1/cx_rt_generic.
+    " NOTE: get_session_token is not tested here because it requires IAM user credentials
+    " (long-term access keys) and cannot be called with temporary/session credentials.
+    " Most SAP ABAP SDK profiles use IAM role credentials (temporary), which makes
+    " automated testing of GetSessionToken impractical. The method is provided for
+    " documentation purposes to show developers how to use it when they have IAM user credentials.
+    METHODS: assume_role FOR TESTING RAISING /aws1/cx_rt_generic.
 
     CLASS-METHODS class_setup RAISING /aws1/cx_rt_generic /awsex/cx_generic.
     CLASS-METHODS class_teardown RAISING /aws1/cx_rt_generic /awsex/cx_generic.
@@ -218,58 +222,6 @@ CLASS ltc_awsex_cl_sts_actions IMPLEMENTATION.
     cl_abap_unit_assert=>assert_not_initial(
       act = lv_assumed_role_arn
       msg = 'Assumed role ARN was not returned'
-    ).
-
-  ENDMETHOD.
-
-  METHOD get_session_token.
-    " Test GetSessionToken without MFA
-    " This demonstrates basic session token retrieval
-
-    DATA lo_result TYPE REF TO /aws1/cl_stsgetsessiontokenrsp.
-
-    ao_sts_actions->get_session_token(
-      EXPORTING
-        iv_duration_seconds = 900    " 15 minutes
-      IMPORTING
-        oo_result = lo_result
-    ).
-
-    " Verify that we got temporary credentials
-    cl_abap_unit_assert=>assert_bound(
-      act = lo_result
-      msg = 'GetSessionToken did not return a result'
-    ).
-
-    DATA(lo_credentials) = lo_result->get_credentials( ).
-    cl_abap_unit_assert=>assert_bound(
-      act = lo_credentials
-      msg = 'GetSessionToken did not return credentials'
-    ).
-
-    " Verify that credentials have required fields
-    DATA(lv_access_key_id) = lo_credentials->get_accesskeyid( ).
-    cl_abap_unit_assert=>assert_not_initial(
-      act = lv_access_key_id
-      msg = 'Access key ID was not returned'
-    ).
-
-    DATA(lv_secret_access_key) = lo_credentials->get_secretaccesskey( ).
-    cl_abap_unit_assert=>assert_not_initial(
-      act = lv_secret_access_key
-      msg = 'Secret access key was not returned'
-    ).
-
-    DATA(lv_session_token) = lo_credentials->get_sessiontoken( ).
-    cl_abap_unit_assert=>assert_not_initial(
-      act = lv_session_token
-      msg = 'Session token was not returned'
-    ).
-
-    DATA(lv_expiration) = lo_credentials->get_expiration( ).
-    cl_abap_unit_assert=>assert_not_initial(
-      act = lv_expiration
-      msg = 'Expiration was not returned'
     ).
 
   ENDMETHOD.
