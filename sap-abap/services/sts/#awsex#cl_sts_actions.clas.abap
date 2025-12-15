@@ -46,13 +46,22 @@ CLASS /AWSEX/CL_STS_ACTIONS IMPLEMENTATION.
 
     " snippet-start:[sts.abapv1.assume_role]
     TRY.
-        oo_result = lo_sts->assumerole(           " oo_result is returned for testing purposes. "
-          iv_rolearn = iv_role_arn
-          iv_rolesessionname = iv_role_session_name
-          iv_serialnumber = iv_serial_number
-          iv_tokencode = iv_token_code
-          iv_durationseconds = iv_duration_seconds
-        ).
+        " Only pass MFA parameters if they are provided
+        IF iv_serial_number IS NOT INITIAL AND iv_token_code IS NOT INITIAL.
+          oo_result = lo_sts->assumerole(           " oo_result is returned for testing purposes. "
+            iv_rolearn = iv_role_arn
+            iv_rolesessionname = iv_role_session_name
+            iv_serialnumber = iv_serial_number
+            iv_tokencode = iv_token_code
+            iv_durationseconds = iv_duration_seconds
+          ).
+        ELSE.
+          oo_result = lo_sts->assumerole(           " oo_result is returned for testing purposes. "
+            iv_rolearn = iv_role_arn
+            iv_rolesessionname = iv_role_session_name
+            iv_durationseconds = iv_duration_seconds
+          ).
+        ENDIF.
         " Credentials can be retrieved from the result object
         DATA(lo_credentials) = oo_result->get_credentials( ).
         DATA(lv_access_key_id) = lo_credentials->get_accesskeyid( ).
@@ -81,11 +90,18 @@ CLASS /AWSEX/CL_STS_ACTIONS IMPLEMENTATION.
 
     " snippet-start:[sts.abapv1.get_session_token]
     TRY.
-        oo_result = lo_sts->getsessiontoken(      " oo_result is returned for testing purposes. "
-          iv_serialnumber = iv_serial_number
-          iv_tokencode = iv_token_code
-          iv_durationseconds = iv_duration_seconds
-        ).
+        " Only pass MFA parameters if they are provided
+        IF iv_serial_number IS NOT INITIAL AND iv_token_code IS NOT INITIAL.
+          oo_result = lo_sts->getsessiontoken(      " oo_result is returned for testing purposes. "
+            iv_serialnumber = iv_serial_number
+            iv_tokencode = iv_token_code
+            iv_durationseconds = iv_duration_seconds
+          ).
+        ELSE.
+          oo_result = lo_sts->getsessiontoken(      " oo_result is returned for testing purposes. "
+            iv_durationseconds = iv_duration_seconds
+          ).
+        ENDIF.
         " Credentials can be retrieved from the result object
         DATA(lo_credentials) = oo_result->get_credentials( ).
         DATA(lv_access_key_id) = lo_credentials->get_accesskeyid( ).
