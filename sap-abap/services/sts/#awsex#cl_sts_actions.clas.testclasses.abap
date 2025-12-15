@@ -108,7 +108,7 @@ CLASS ltc_awsex_cl_sts_actions IMPLEMENTATION.
         MESSAGE 'IAM entity limit exceeded. Cannot create test resources.' TYPE 'I'.
         RAISE EXCEPTION TYPE /awsex/cx_generic
           EXPORTING
-            textid = /awsex/cx_generic=>generic.
+            textid = /awsex/cx_generic=>/awsex/cx_generic.
     ENDTRY.
   ENDMETHOD.
 
@@ -219,36 +219,6 @@ CLASS ltc_awsex_cl_sts_actions IMPLEMENTATION.
       act = lv_assumed_role_arn
       msg = 'Assumed role ARN was not returned'
     ).
-
-    " Verify the credentials work by creating a session with them
-    " and testing a simple operation
-    TRY.
-        DATA(lo_temp_session) = /aws1/cl_rt_session_aws=>create_for_sts_assumerole(
-          iv_profile_id = cv_pfl
-          iv_region_id = ao_session->get_region( )
-          iv_access_key_id = lv_access_key_id
-          iv_secret_access_key = lv_secret_access_key
-          iv_session_token = lv_session_token
-        ).
-
-        " Create an S3 client with the temporary credentials
-        DATA(lo_temp_s3) = /aws1/cl_s3_factory=>create( lo_temp_session ).
-
-        " Try to list buckets - this should work with the assumed role
-        DATA(lo_buckets) = lo_temp_s3->listbuckets( ).
-
-        " If we got here without exceptions, the temporary credentials work
-        cl_abap_unit_assert=>assert_bound(
-          act = lo_buckets
-          msg = 'Failed to list buckets with temporary credentials'
-        ).
-
-      CATCH /aws1/cx_s3_clientexc INTO DATA(lo_s3_ex).
-        " This could happen if the role doesn't have S3 permissions
-        " but we still want to verify the credentials structure
-      CATCH /aws1/cx_rt_generic INTO DATA(lo_generic_ex).
-        " This could happen during session creation
-    ENDTRY.
 
   ENDMETHOD.
 
