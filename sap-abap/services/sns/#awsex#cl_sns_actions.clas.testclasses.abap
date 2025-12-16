@@ -12,6 +12,10 @@ CLASS ltc_awsex_cl_sns_actions DEFINITION FOR TESTING DURATION SHORT RISK LEVEL 
     CLASS-DATA ao_session TYPE REF TO /aws1/cl_rt_session_base.
     CLASS-DATA ao_sns_actions TYPE REF TO /awsex/cl_sns_actions.
     CLASS-DATA ao_sqs TYPE REF TO /aws1/if_sqs.
+    CLASS-DATA ao_sns TYPE REF TO /aws1/if_sns.
+    CLASS-DATA ao_session TYPE REF TO /aws1/cl_rt_session_base.
+    CLASS-DATA ao_sns_actions TYPE REF TO /awsex/cl_sns_actions.
+    CLASS-DATA ao_sqs TYPE REF TO /aws1/if_sqs.
 
     METHODS: create_topic FOR TESTING RAISING /aws1/cx_rt_generic,
       list_topics FOR TESTING RAISING /aws1/cx_rt_generic,
@@ -29,10 +33,6 @@ CLASS ltc_awsex_cl_sns_actions DEFINITION FOR TESTING DURATION SHORT RISK LEVEL 
 
     CLASS-METHODS class_setup RAISING /aws1/cx_rt_generic.
     CLASS-METHODS class_teardown.
-
-    METHODS get_uuid
-      RETURNING
-        VALUE(ov_uuid) TYPE string.
 
     METHODS assert_subscription_exists
       IMPORTING
@@ -52,6 +52,7 @@ ENDCLASS.
 CLASS ltc_awsex_cl_sns_actions IMPLEMENTATION.
 
   METHOD class_setup.
+  METHOD class_setup.
     ao_session = /aws1/cl_rt_session_aws=>create( iv_profile_id = cv_pfl ).
     ao_sns = /aws1/cl_sns_factory=>create( ao_session ).
     ao_sns_actions = NEW /awsex/cl_sns_actions( ).
@@ -64,12 +65,6 @@ CLASS ltc_awsex_cl_sns_actions IMPLEMENTATION.
     " SQS queues are also cleaned up in individual tests
   ENDMETHOD.
 
-  METHOD get_uuid.
-    DATA lv_timestamp TYPE timestamp.
-    GET TIME STAMP FIELD lv_timestamp.
-    ov_uuid = lv_timestamp.
-    CONDENSE ov_uuid NO-GAPS.
-  ENDMETHOD.
 
   METHOD create_topic.
     DATA(lv_uuid) = get_uuid( ).
@@ -82,13 +77,13 @@ CLASS ltc_awsex_cl_sns_actions IMPLEMENTATION.
     ao_sns->deletetopic( iv_topicarn = lo_result->get_topicarn( ) ).
   ENDMETHOD.
 
+
   METHOD delete_topic.
-    DATA(lv_uuid) = get_uuid( ).
-    DATA(lv_topic_name) = |code-example-delete-topic-{ lv_uuid }|.
+    CONSTANTS cv_topic_name TYPE /aws1/snstopicname VALUE 'code-example-delete-topic'.
     " Create topic with tag
     DATA lt_topic_tags TYPE /aws1/cl_snstag=>tt_taglist.
     APPEND NEW /aws1/cl_snstag( iv_key = 'convert_test' iv_value = 'true' ) TO lt_topic_tags.
-    DATA(lo_result) = ao_sns->createtopic( iv_name = lv_topic_name it_tags = lt_topic_tags ).
+    DATA(lo_result) = ao_sns->createtopic( iv_name = cv_topic_name it_tags = lt_topic_tags ).
     DATA(lv_topic_arn) = lo_result->get_topicarn( ).
 
     ao_sns_actions->delete_topic( lv_topic_arn ).
@@ -98,13 +93,13 @@ CLASS ltc_awsex_cl_sns_actions IMPLEMENTATION.
       iv_msg = |Topic { lv_topic_name } should have been deleted| ).
   ENDMETHOD.
 
+
   METHOD get_topic_attributes.
-    DATA(lv_uuid) = get_uuid( ).
-    DATA(lv_topic_name) = |code-ex-get-attrs-{ lv_uuid }|.
+    CONSTANTS cv_topic_name TYPE /aws1/snstopicname VALUE 'code-example-get-topic-attributes'.
     " Create topic with tag
     DATA lt_topic_tags TYPE /aws1/cl_snstag=>tt_taglist.
     APPEND NEW /aws1/cl_snstag( iv_key = 'convert_test' iv_value = 'true' ) TO lt_topic_tags.
-    DATA(lo_create_result) = ao_sns->createtopic( iv_name = lv_topic_name it_tags = lt_topic_tags ).
+    DATA(lo_create_result) = ao_sns->createtopic( iv_name = cv_topic_name it_tags = lt_topic_tags ).
     DATA(lv_topic_arn) = lo_create_result->get_topicarn( ).
     DATA(lo_get_attributes_result) = ao_sns_actions->get_topic_attributes( lv_topic_arn ).
 
@@ -119,6 +114,7 @@ CLASS ltc_awsex_cl_sns_actions IMPLEMENTATION.
     ao_sns->deletetopic( iv_topicarn = lv_topic_arn ).
   ENDMETHOD.
 
+
   METHOD subscribe_email.
     DATA(lv_uuid) = get_uuid( ).
     DATA(lv_topic_name) = |code-ex-sub-email-{ lv_uuid }|.
@@ -127,7 +123,7 @@ CLASS ltc_awsex_cl_sns_actions IMPLEMENTATION.
     " Create topic with tag
     DATA lt_topic_tags TYPE /aws1/cl_snstag=>tt_taglist.
     APPEND NEW /aws1/cl_snstag( iv_key = 'convert_test' iv_value = 'true' ) TO lt_topic_tags.
-    DATA(lo_create_result) = ao_sns->createtopic( iv_name = lv_topic_name it_tags = lt_topic_tags ).
+    DATA(lo_create_result) = ao_sns->createtopic( iv_name = cv_topic_name it_tags = lt_topic_tags ).
     DATA(lv_topic_arn) = lo_create_result->get_topicarn( ).
     DATA(lo_subscribe_result) = ao_sns_actions->subscribe_email(
         iv_topic_arn = lv_topic_arn
@@ -149,17 +145,17 @@ CLASS ltc_awsex_cl_sns_actions IMPLEMENTATION.
 
     " Create topic with tag
     DATA lt_topic_tags TYPE /aws1/cl_snstag=>tt_taglist.
-    APPEND NEW /aws1/cl_snstag( iv_key = 'convert_test' iv_value = 'true' ) TO lt_topic_tags.
-    DATA(lo_create_result) = ao_sns->createtopic( iv_name = lv_topic_name it_tags = lt_topic_tags ).
+    DATA ls_topic_tag TYPE /aws1/cl_snstag=>ts_tag.
+    ls_topic_tag-key = 'convert_test'.
+    ls_topic_tag-value = 'true'.
+    APPEND NEW /aws1/cl_snstag( iv_key = ls_topic_tag-key iv_value = ls_topic_tag-value ) TO lt_topic_tags.
+    DATA(lo_create_result) = ao_sns->createtopic( iv_name = cv_topic_name it_tags = lt_topic_tags ).
     DATA(lv_topic_arn) = lo_create_result->get_topicarn( ).
 
     " Create queue with tag
-    DATA lt_queue_tags TYPE /aws1/cl_sqstagmap_w=>tt_tagmap.
-    DATA ls_queue_tag LIKE LINE OF lt_queue_tags.
-    ls_queue_tag-key = 'convert_test'.
-    ls_queue_tag-value = NEW /aws1/cl_sqstagmap_w( iv_value = 'true' ).
-    INSERT ls_queue_tag INTO TABLE lt_queue_tags.
-    DATA(lo_create_queue_result) = ao_sqs->createqueue( iv_queuename = lv_queue_name it_tags = lt_queue_tags ).
+    DATA lt_queue_tags TYPE /aws1/cl_sqstag=>tt_tagmap.
+    INSERT VALUE #( key = 'convert_test' value = 'true' ) INTO TABLE lt_queue_tags.
+    DATA(lo_create_queue_result) = ao_sqs->createqueue( iv_queuename = cv_queue_name it_tags = lt_queue_tags ).
     DATA(lv_queue_url) = lo_create_queue_result->get_queueurl( ).
     DATA lt_required_attributes TYPE /aws1/cl_sqsattrnamelist_w=>tt_attributenamelist.
     APPEND NEW /aws1/cl_sqsattrnamelist_w( iv_value = 'QueueArn' ) TO lt_required_attributes.
@@ -190,17 +186,17 @@ CLASS ltc_awsex_cl_sns_actions IMPLEMENTATION.
 
     " Create topic with tag
     DATA lt_topic_tags TYPE /aws1/cl_snstag=>tt_taglist.
-    APPEND NEW /aws1/cl_snstag( iv_key = 'convert_test' iv_value = 'true' ) TO lt_topic_tags.
-    DATA(lo_create_result) = ao_sns->createtopic( iv_name = lv_topic_name it_tags = lt_topic_tags ).
+    DATA ls_topic_tag TYPE /aws1/cl_snstag=>ts_tag.
+    ls_topic_tag-key = 'convert_test'.
+    ls_topic_tag-value = 'true'.
+    APPEND NEW /aws1/cl_snstag( iv_key = ls_topic_tag-key iv_value = ls_topic_tag-value ) TO lt_topic_tags.
+    DATA(lo_create_result) = ao_sns->createtopic( iv_name = cv_topic_name it_tags = lt_topic_tags ).
     DATA(lv_topic_arn) = lo_create_result->get_topicarn( ).
 
     " Create queue with tag
-    DATA lt_queue_tags TYPE /aws1/cl_sqstagmap_w=>tt_tagmap.
-    DATA ls_queue_tag LIKE LINE OF lt_queue_tags.
-    ls_queue_tag-key = 'convert_test'.
-    ls_queue_tag-value = NEW /aws1/cl_sqstagmap_w( iv_value = 'true' ).
-    INSERT ls_queue_tag INTO TABLE lt_queue_tags.
-    DATA(lo_create_queue_result) = ao_sqs->createqueue( iv_queuename = lv_queue_name it_tags = lt_queue_tags ).
+    DATA lt_queue_tags TYPE /aws1/cl_sqstag=>tt_tagmap.
+    INSERT VALUE #( key = 'convert_test' value = 'true' ) INTO TABLE lt_queue_tags.
+    DATA(lo_create_queue_result) = ao_sqs->createqueue( iv_queuename = cv_queue_name it_tags = lt_queue_tags ).
     DATA(lv_queue_url) = lo_create_queue_result->get_queueurl( ).
     DATA lt_required_attributes TYPE /aws1/cl_sqsattrnamelist_w=>tt_attributenamelist.
     APPEND NEW /aws1/cl_sqsattrnamelist_w( iv_value = 'QueueArn' ) TO lt_required_attributes.
@@ -224,12 +220,11 @@ CLASS ltc_awsex_cl_sns_actions IMPLEMENTATION.
     ao_sns->deletetopic( iv_topicarn = lv_topic_arn ).
   ENDMETHOD.
   METHOD list_topics.
-    DATA(lv_uuid) = get_uuid( ).
-    DATA(lv_topic_name) = |code-ex-list-top-{ lv_uuid }|.
+    CONSTANTS cv_topic_name TYPE /aws1/snstopicname VALUE 'code-example-list-topics'.
     " Create topic with tag
     DATA lt_topic_tags TYPE /aws1/cl_snstag=>tt_taglist.
     APPEND NEW /aws1/cl_snstag( iv_key = 'convert_test' iv_value = 'true' ) TO lt_topic_tags.
-    DATA(lo_create_result) = ao_sns->createtopic( iv_name = lv_topic_name it_tags = lt_topic_tags ).
+    DATA(lo_create_result) = ao_sns->createtopic( iv_name = cv_topic_name it_tags = lt_topic_tags ).
     DATA(lv_topic_arn) = lo_create_result->get_topicarn( ).
     DATA(lo_list_result) = ao_sns_actions->list_topics( ).
 
@@ -244,6 +239,7 @@ CLASS ltc_awsex_cl_sns_actions IMPLEMENTATION.
     ao_sns->deletetopic( iv_topicarn = lv_topic_arn ).
   ENDMETHOD.
 
+
   METHOD publish_to_topic.
     DATA(lv_uuid) = get_uuid( ).
     DATA(lv_topic_name) = |code-ex-pub-top-{ lv_uuid }|.
@@ -251,7 +247,7 @@ CLASS ltc_awsex_cl_sns_actions IMPLEMENTATION.
     " Create topic with tag
     DATA lt_topic_tags TYPE /aws1/cl_snstag=>tt_taglist.
     APPEND NEW /aws1/cl_snstag( iv_key = 'convert_test' iv_value = 'true' ) TO lt_topic_tags.
-    DATA(lo_create_result) = ao_sns->createtopic( iv_name = lv_topic_name it_tags = lt_topic_tags ).
+    DATA(lo_create_result) = ao_sns->createtopic( iv_name = cv_topic_name it_tags = lt_topic_tags ).
     DATA(lv_topic_arn) = lo_create_result->get_topicarn( ).
     DATA(lo_publish_result) = ao_sns_actions->publish_to_topic(
                            iv_topic_arn = lv_topic_arn
@@ -262,6 +258,7 @@ CLASS ltc_awsex_cl_sns_actions IMPLEMENTATION.
     ao_sns->deletetopic( iv_topicarn = lv_topic_arn ).
   ENDMETHOD.
 
+
   METHOD set_topic_attributes.
     DATA(lv_uuid) = get_uuid( ).
     DATA(lv_topic_name) = |code-ex-set-attrs-{ lv_uuid }|.
@@ -270,7 +267,7 @@ CLASS ltc_awsex_cl_sns_actions IMPLEMENTATION.
     " Create topic with tag
     DATA lt_topic_tags TYPE /aws1/cl_snstag=>tt_taglist.
     APPEND NEW /aws1/cl_snstag( iv_key = 'convert_test' iv_value = 'true' ) TO lt_topic_tags.
-    DATA(lo_create_result) = ao_sns->createtopic( iv_name = lv_topic_name it_tags = lt_topic_tags ).
+    DATA(lo_create_result) = ao_sns->createtopic( iv_name = cv_topic_name it_tags = lt_topic_tags ).
     DATA(lv_topic_arn) = lo_create_result->get_topicarn( ).
     DATA(lt_attributes) = ao_sns->gettopicattributes( iv_topicarn = lv_topic_arn )->get_attributes( ).
     READ TABLE lt_attributes INTO DATA(ls_attributes) WITH TABLE KEY key = cv_attribute_name.
@@ -319,7 +316,8 @@ CLASS ltc_awsex_cl_sns_actions IMPLEMENTATION.
 
   METHOD publish_text_message.
     " Note: This test uses a dummy phone number for testing purposes.
-    CONSTANTS cv_phone_number TYPE /aws1/snsphonenumber VALUE '+12065550100'.
+    " In production, use valid E.164 formatted phone numbers.
+    CONSTANTS cv_phone_number TYPE /aws1/snsphonenumber VALUE '+10000000000'.
     CONSTANTS cv_message TYPE /aws1/snsmessage VALUE 'Test SMS message'.
 
     TRY.
@@ -337,8 +335,7 @@ CLASS ltc_awsex_cl_sns_actions IMPLEMENTATION.
 
 
   METHOD publish_message.
-    DATA(lv_uuid) = get_uuid( ).
-    DATA(lv_topic_name) = |code-ex-pub-msg-{ lv_uuid }|.
+    CONSTANTS cv_topic_name TYPE /aws1/snstopicname VALUE 'code-example-publish-msg'.
     CONSTANTS cv_message TYPE /aws1/snsmessage VALUE 'Test message with attributes'.
     CONSTANTS cv_attr_key TYPE /aws1/snsstring VALUE 'test_key'.
     CONSTANTS cv_attr_value TYPE /aws1/snsstring VALUE 'test_value'.
@@ -346,7 +343,7 @@ CLASS ltc_awsex_cl_sns_actions IMPLEMENTATION.
     " Create topic with tag
     DATA lt_topic_tags TYPE /aws1/cl_snstag=>tt_taglist.
     APPEND NEW /aws1/cl_snstag( iv_key = 'convert_test' iv_value = 'true' ) TO lt_topic_tags.
-    DATA(lo_create_result) = ao_sns->createtopic( iv_name = lv_topic_name it_tags = lt_topic_tags ).
+    DATA(lo_create_result) = ao_sns->createtopic( iv_name = cv_topic_name it_tags = lt_topic_tags ).
     DATA(lv_topic_arn) = lo_create_result->get_topicarn( ).
 
     " Create message attributes
@@ -372,24 +369,23 @@ CLASS ltc_awsex_cl_sns_actions IMPLEMENTATION.
 
 
   METHOD add_subscription_filter.
-    DATA(lv_uuid) = get_uuid( ).
-    DATA(lv_topic_name) = |code-ex-add-filter-{ lv_uuid }|.
-    DATA(lv_queue_name) = |code-ex-filter-q-{ lv_uuid }|.
+    CONSTANTS cv_topic_name TYPE /aws1/snstopicname VALUE 'code-example-add-filter'.
+    CONSTANTS cv_queue_name TYPE /aws1/sqsstring VALUE 'code-example-filter-queue'.
     CONSTANTS cv_filter_policy TYPE /aws1/snsattributevalue VALUE '{"store":["example_corp"]}'.
 
     " Create topic with tag
     DATA lt_topic_tags TYPE /aws1/cl_snstag=>tt_taglist.
-    APPEND NEW /aws1/cl_snstag( iv_key = 'convert_test' iv_value = 'true' ) TO lt_topic_tags.
-    DATA(lo_create_result) = ao_sns->createtopic( iv_name = lv_topic_name it_tags = lt_topic_tags ).
+    DATA ls_topic_tag TYPE /aws1/cl_snstag=>ts_tag.
+    ls_topic_tag-key = 'convert_test'.
+    ls_topic_tag-value = 'true'.
+    APPEND NEW /aws1/cl_snstag( iv_key = ls_topic_tag-key iv_value = ls_topic_tag-value ) TO lt_topic_tags.
+    DATA(lo_create_result) = ao_sns->createtopic( iv_name = cv_topic_name it_tags = lt_topic_tags ).
     DATA(lv_topic_arn) = lo_create_result->get_topicarn( ).
 
     " Create SQS queue for subscription with tag
-    DATA lt_queue_tags TYPE /aws1/cl_sqstagmap_w=>tt_tagmap.
-    DATA ls_queue_tag LIKE LINE OF lt_queue_tags.
-    ls_queue_tag-key = 'convert_test'.
-    ls_queue_tag-value = NEW /aws1/cl_sqstagmap_w( iv_value = 'true' ).
-    INSERT ls_queue_tag INTO TABLE lt_queue_tags.
-    DATA(lo_create_queue_result) = ao_sqs->createqueue( iv_queuename = lv_queue_name it_tags = lt_queue_tags ).
+    DATA lt_queue_tags TYPE /aws1/cl_sqstag=>tt_tagmap.
+    INSERT VALUE #( key = 'convert_test' value = 'true' ) INTO TABLE lt_queue_tags.
+    DATA(lo_create_queue_result) = ao_sqs->createqueue( iv_queuename = cv_queue_name it_tags = lt_queue_tags ).
     DATA(lv_queue_url) = lo_create_queue_result->get_queueurl( ).
     DATA lt_required_attributes TYPE /aws1/cl_sqsattrnamelist_w=>tt_attributenamelist.
     APPEND NEW /aws1/cl_sqsattrnamelist_w( iv_value = 'QueueArn' ) TO lt_required_attributes.
@@ -427,9 +423,9 @@ CLASS ltc_awsex_cl_sns_actions IMPLEMENTATION.
     ao_sns->deletetopic( iv_topicarn = lv_topic_arn ).
   ENDMETHOD.
 
+
   METHOD publish_multi_message.
-    DATA(lv_uuid) = get_uuid( ).
-    DATA(lv_topic_name) = |code-ex-multi-msg-{ lv_uuid }|.
+    CONSTANTS cv_topic_name TYPE /aws1/snstopicname VALUE 'code-example-multi-msg'.
     CONSTANTS cv_subject TYPE /aws1/snssubject VALUE 'Test Subject'.
     CONSTANTS cv_default_msg TYPE /aws1/snsmessage VALUE 'This is default message'.
     CONSTANTS cv_sms_msg TYPE /aws1/snsmessage VALUE 'SMS message'.
@@ -438,7 +434,7 @@ CLASS ltc_awsex_cl_sns_actions IMPLEMENTATION.
     " Create topic with tag
     DATA lt_topic_tags TYPE /aws1/cl_snstag=>tt_taglist.
     APPEND NEW /aws1/cl_snstag( iv_key = 'convert_test' iv_value = 'true' ) TO lt_topic_tags.
-    DATA(lo_create_result) = ao_sns->createtopic( iv_name = lv_topic_name it_tags = lt_topic_tags ).
+    DATA(lo_create_result) = ao_sns->createtopic( iv_name = cv_topic_name it_tags = lt_topic_tags ).
     DATA(lv_topic_arn) = lo_create_result->get_topicarn( ).
 
     DATA(lo_publish_result) = ao_sns_actions->publish_multi_message(
