@@ -16,7 +16,7 @@ CLASS ltc_awsex_cl_scd_actions DEFINITION FOR TESTING DURATION LONG RISK LEVEL D
     CLASS-DATA av_queue_url TYPE /aws1/sqsstring.
     CLASS-DATA av_queue_arn TYPE /aws1/sqsstring.
     CLASS-DATA av_role_arn TYPE /aws1/iamarntype.
-    CLASS-DATA av_role_name TYPE /aws1/iamrolenametype.
+    CLASS-DATA av_role_name TYPE /aws1/iamrolenametyp.
     CLASS-DATA av_schedule_group_name TYPE /aws1/scdschedulegroupname.
     CLASS-DATA av_schedule_name TYPE /aws1/scdname.
 
@@ -60,16 +60,12 @@ CLASS ltc_awsex_cl_scd_actions IMPLEMENTATION.
 
     TRY.
         " Create SQS queue with tags for cleanup
+        DATA(lo_tags) = NEW /aws1/cl_sqstagmap_w( ).
+        lo_tags->add( iv_key = 'convert_test' iv_value = 'true' ).
+
         DATA(lo_create_result) = ao_sqs->createqueue(
           iv_queuename = lv_queue_name
-          it_tags = VALUE /aws1/cl_sqstagmap_w=>tt_tagmap(
-            (
-              VALUE /aws1/cl_sqstagmap_w=>ts_tagmap_maprow(
-                key = 'convert_test'
-                value = NEW /aws1/cl_sqstagmap_w( 'true' )
-              )
-            )
-          ) ).
+          io_tags = lo_tags ).
         av_queue_url = lo_create_result->get_queueurl( ).
 
         " Get queue ARN
@@ -78,13 +74,7 @@ CLASS ltc_awsex_cl_scd_actions IMPLEMENTATION.
           it_attributenames = VALUE /aws1/cl_sqsattrnamelist_w=>tt_attributenamelist(
             ( NEW /aws1/cl_sqsattrnamelist_w( 'QueueArn' ) ) ) ).
 
-        " Extract QueueArn from attributes
-        LOOP AT lo_attrs->get_attributes( ) INTO DATA(ls_attr_row).
-          IF ls_attr_row-key = 'QueueArn'.
-            av_queue_arn = ls_attr_row-value->get_value( ).
-            EXIT.
-          ENDIF.
-        ENDLOOP.
+        av_queue_arn = lo_attrs->get_attributes( )->get_item( 'QueueArn' )->get_value( ).
 
         " Create IAM role for EventBridge Scheduler with permissions
         av_role_name = |scd-test-role-{ lv_uuid_string }|.
@@ -306,28 +296,16 @@ CLASS ltc_awsex_cl_scd_actions IMPLEMENTATION.
     " Delete the schedule group
     ao_scd_actions->delete_schedule_group( iv_name = lv_test_group_name ).
 
-    " Wait for deletion to complete with polling
-    DATA lv_max_attempts TYPE i VALUE 20.
-    DATA lv_attempts TYPE i VALUE 0.
-    DATA lv_deleted TYPE abap_bool VALUE abap_false.
-
-    WHILE lv_attempts < lv_max_attempts.
-      TRY.
-          ao_scd->getschedulegroup( iv_name = lv_test_group_name ).
-          " Schedule group still exists, wait and try again
-          WAIT UP TO 3 SECONDS.
-          lv_attempts = lv_attempts + 1.
-        CATCH /aws1/cx_scdresourcenotfoundex.
-          " Expected - schedule group was deleted
-          lv_deleted = abap_true.
-          EXIT.
-      ENDTRY.
-    ENDWHILE.
+    " Wait a bit for deletion to complete
+    WAIT UP TO 2 SECONDS.
 
     " Verify the schedule group was deleted
-    cl_abap_unit_assert=>assert_true(
-      act = lv_deleted
-      msg = |Schedule group should have been deleted| ).
+    TRY.
+        ao_scd->getschedulegroup( iv_name = lv_test_group_name ).
+        cl_abap_unit_assert=>fail( msg = |Schedule group should have been deleted| ).
+      CATCH /aws1/cx_scdresourcenotfoundex.
+        " Expected - schedule group was deleted
+    ENDTRY.
   ENDMETHOD.
 
   METHOD wait_for_schedule_deletion.

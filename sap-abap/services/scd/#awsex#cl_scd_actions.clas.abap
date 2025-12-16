@@ -64,20 +64,15 @@ CLASS /AWSEX/CL_SCD_ACTIONS IMPLEMENTATION.
         " Constants for time calculations
         DATA lv_start_date TYPE /aws1/scdstartdate.
         DATA lv_end_date TYPE /aws1/scdenddate.
-        DATA lv_start_timestamp TYPE timestamp.
-        DATA lv_end_timestamp TYPE timestamp.
+        DATA lv_timestamp TYPE timestamp.
         DATA lv_hours_to_run TYPE i VALUE 1.
 
-        " Get current timestamp
-        GET TIME STAMP FIELD lv_start_timestamp.
-        
-        " Add 1 hour to the current timestamp using CL_ABAP_TSTMP
-        lv_end_timestamp = cl_abap_tstmp=>add(
-          tstmp = lv_start_timestamp
-          secs = lv_hours_to_run * 3600 ).
+        " Get current timestamp and calculate start and end dates
+        GET TIME STAMP FIELD lv_timestamp.
+        lv_start_date = lv_timestamp.
 
-        " Convert timestamps to decimal format for AWS API
-        lv_start_date = lv_start_timestamp.
+        " Add 1 hour to the timestamp for end date
+        DATA(lv_end_timestamp) = lv_timestamp + ( lv_hours_to_run * 3600 ).
         lv_end_date = lv_end_timestamp.
 
         " Prepare flexible time window configuration
