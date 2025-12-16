@@ -51,6 +51,12 @@ CLASS /awsex/cl_s3_actions DEFINITION
       EXPORTING
                 !oo_result      TYPE REF TO /aws1/cl_s3_listobjsv2output
       RAISING   /aws1/cx_rt_generic.
+    METHODS create_session
+      IMPORTING
+                !iv_bucket_name TYPE /aws1/s3_bucketname
+      EXPORTING
+                !oo_result      TYPE REF TO /aws1/cl_s3_createsessoutput
+      RAISING   /aws1/cx_rt_generic.
   PROTECTED SECTION.
   PRIVATE SECTION.
 ENDCLASS.
@@ -241,5 +247,25 @@ CLASS /AWSEX/CL_S3_ACTIONS IMPLEMENTATION.
     ENDTRY.
 
     "snippet-end:[s3.abapv1.put_object]
+  ENDMETHOD.
+
+
+  METHOD create_session.
+
+    CONSTANTS cv_pfl TYPE /aws1/rt_profile_id VALUE 'ZCODE_DEMO'.
+
+    DATA(lo_session) = /aws1/cl_rt_session_aws=>create( cv_pfl ).
+    DATA(lo_s3) = /aws1/cl_s3_factory=>create( lo_session ).
+
+    " snippet-start:[s3.abapv1.create_session]
+    TRY.
+        " Create a session for an S3 Express One Zone bucket
+        oo_result = lo_s3->createsession(           " oo_result is returned for testing purposes. "
+          iv_bucket = iv_bucket_name ).
+        MESSAGE 'S3 Express session created successfully.' TYPE 'I'.
+      CATCH /aws1/cx_s3_nosuchbucket.
+        MESSAGE 'Bucket does not exist.' TYPE 'E'.
+    ENDTRY.
+    " snippet-end:[s3.abapv1.create_session]
   ENDMETHOD.
 ENDCLASS.

@@ -14,6 +14,7 @@ CLASS ltc_awsex_cl_s3_actions DEFINITION FOR TESTING DURATION SHORT RISK LEVEL D
     CLASS-DATA av_bucket_delete      TYPE /aws1/s3_bucketname.
     CLASS-DATA av_src_bucket TYPE /aws1/s3_bucketname.
     CLASS-DATA av_dest_bucket TYPE /aws1/s3_bucketname.
+    CLASS-DATA av_directory_bucket TYPE /aws1/s3_bucketname.
 
     CLASS-DATA ao_s3 TYPE REF TO /aws1/if_s3.
     CLASS-DATA ao_session TYPE REF TO /aws1/cl_rt_session_base.
@@ -26,7 +27,8 @@ CLASS ltc_awsex_cl_s3_actions DEFINITION FOR TESTING DURATION SHORT RISK LEVEL D
       list_objects FOR TESTING RAISING /aws1/cx_rt_generic,
       list_objects_v2 FOR TESTING RAISING /aws1/cx_rt_generic,
       delete_object FOR TESTING RAISING /aws1/cx_rt_generic,
-      delete_bucket FOR TESTING RAISING /aws1/cx_rt_generic.
+      delete_bucket FOR TESTING RAISING /aws1/cx_rt_generic,
+      create_session FOR TESTING RAISING /aws1/cx_rt_generic.
 
     CLASS-METHODS class_setup RAISING /aws1/cx_rt_generic /awsex/cx_generic.
     CLASS-METHODS class_teardown RAISING /aws1/cx_rt_generic /awsex/cx_generic.
@@ -64,11 +66,58 @@ CLASS ltc_awsex_cl_s3_actions IMPLEMENTATION.
     av_dest_bucket = |sap-abap-s3-demo-copy-object-dst-bucket-{ lv_acct }|.
     av_bucket_delete = |sap-abap-s3-demo-bucket-delete-{ lv_acct }|.
     av_bucket_create = |sap-abap-s3-demo-bucket-create-{ lv_acct }|.
-    ao_s3_actions->create_bucket( av_bucket ).
-    ao_s3_actions->create_bucket( av_src_bucket ).
-    ao_s3_actions->create_bucket( av_dest_bucket ).
-    ao_s3_actions->create_bucket( av_bucket_delete ).
+    
+    " Create buckets and tag them with 'convert_test'
+    DATA(lt_tags) = VALUE /aws1/cl_s3_tag=>tt_tagset(
+      ( NEW /aws1/cl_s3_tag( iv_key = 'convert_test' iv_value = 'true' ) )
+    ).
+    DATA(lo_tagging) = NEW /aws1/cl_s3_tagging( it_tagset = lt_tags ).
 
+    /awsex/cl_utils=>create_bucket( iv_bucket = av_bucket
+                                    io_s3 = ao_s3
+                                    io_session = ao_session ).
+    ao_s3->putbuckettagging( iv_bucket = av_bucket io_tagging = lo_tagging ).
+
+    /awsex/cl_utils=>create_bucket( iv_bucket = av_src_bucket
+                                    io_s3 = ao_s3
+                                    io_session = ao_session ).
+    ao_s3->putbuckettagging( iv_bucket = av_src_bucket io_tagging = lo_tagging ).
+
+    /awsex/cl_utils=>create_bucket( iv_bucket = av_dest_bucket
+                                    io_s3 = ao_s3
+                                    io_session = ao_session ).
+    ao_s3->putbuckettagging( iv_bucket = av_dest_bucket io_tagging = lo_tagging ).
+
+    /awsex/cl_utils=>create_bucket( iv_bucket = av_bucket_delete
+                                    io_s3 = ao_s3
+                                    io_session = ao_session ).
+    ao_s3->putbuckettagging( iv_bucket = av_bucket_delete io_tagging = lo_tagging ).
+
+    " Create a directory bucket for S3 Express One Zone testing
+    " Use use1-az4 availability zone as an example
+    DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
+    av_directory_bucket = |sap-abap-{ lv_uuid }--use1-az4--x-s3|.
+    TRY.
+        DATA(lo_bucket_config) = NEW /aws1/cl_s3_createbucketconf(
+          io_bucket = NEW /aws1/cl_s3_bucketinfo(
+            iv_dataredundancy = 'SingleAvailabilityZone'
+            iv_type = 'Directory'
+          )
+          io_location = NEW /aws1/cl_s3_locationinfo(
+            iv_name = 'use1-az4'
+            iv_type = 'AvailabilityZone'
+          )
+        ).
+        ao_s3->createbucket(
+          iv_bucket = av_directory_bucket
+          io_createbucketconfiguration = lo_bucket_config
+        ).
+        " Tag the directory bucket with 'convert_test'
+        ao_s3->putbuckettagging( iv_bucket = av_directory_bucket io_tagging = lo_tagging ).
+      CATCH /aws1/cx_s3_bucketalrdyexists
+            /aws1/cx_s3_bktalrdyownedbyyou.
+        " Bucket might already exist, continue
+    ENDTRY.
 
   ENDMETHOD.
   METHOD class_teardown.
@@ -82,13 +131,23 @@ CLASS ltc_awsex_cl_s3_actions IMPLEMENTATION.
                                        iv_bucket = av_src_bucket ).
     /awsex/cl_utils=>cleanup_bucket( io_s3 = ao_s3
                                        iv_bucket = av_dest_bucket ).
+    " Clean up directory bucket
+    /awsex/cl_utils=>cleanup_bucket( io_s3 = ao_s3
+                                       iv_bucket = av_directory_bucket ).
   ENDMETHOD.
 
   METHOD create_bucket.
     ao_s3_actions->create_bucket( av_bucket_create ).
 
+    " Tag the newly created bucket with 'convert_test'
+    DATA(lt_tags) = VALUE /aws1/cl_s3_tag=>tt_tagset(
+      ( NEW /aws1/cl_s3_tag( iv_key = 'convert_test' iv_value = 'true' ) )
+    ).
+    DATA(lo_tagging) = NEW /aws1/cl_s3_tagging( it_tagset = lt_tags ).
+    ao_s3->putbuckettagging( iv_bucket = av_bucket_create io_tagging = lo_tagging ).
+
     assert_bucket_exists(
-      iv_bucket = av_bucket
+      iv_bucket = av_bucket_create
       iv_exp = abap_true
       iv_msg = |Bucket { av_bucket_create } was not created| ).
 
@@ -173,7 +232,6 @@ CLASS ltc_awsex_cl_s3_actions IMPLEMENTATION.
     CONSTANTS cv_src_file TYPE /aws1/s3_objectkey VALUE 'copy_object_ex_file'.
     CONSTANTS cv_dest_file TYPE /aws1/s3_objectkey VALUE 'copied_object_ex_file'.
 
-
     create_file( cv_src_file ).
     put_file_in_bucket( iv_bucket = av_src_bucket
                         iv_file = cv_src_file ).
@@ -189,15 +247,12 @@ CLASS ltc_awsex_cl_s3_actions IMPLEMENTATION.
       act = ao_s3->getobject( iv_bucket = av_dest_bucket iv_key = cv_dest_file )->get_body( )
       msg = |Object { cv_dest_file } did not match expected value| ).
 
+    " Clean up objects only, not the buckets (they are shared resources)
     ao_s3->deleteobject( iv_bucket = av_src_bucket
                          iv_key = cv_src_file ).
-    ao_s3->deletebucket( iv_bucket = av_src_bucket ).
-    delete_file( cv_src_file ).
-
     ao_s3->deleteobject( iv_bucket = av_dest_bucket
                          iv_key = cv_dest_file ).
-    ao_s3->deletebucket( iv_bucket = av_dest_bucket ).
-    delete_file( cv_dest_file ).
+    delete_file( cv_src_file ).
 
   ENDMETHOD.
   METHOD list_objects.
@@ -313,6 +368,47 @@ CLASS ltc_awsex_cl_s3_actions IMPLEMENTATION.
       act = lv_found
       exp = iv_exp
       msg = iv_msg ).
+
+  ENDMETHOD.
+
+  METHOD create_session.
+    DATA lo_result TYPE REF TO /aws1/cl_s3_createsessoutput.
+
+    " Test creating a session for the directory bucket
+    ao_s3_actions->create_session(
+      EXPORTING
+        iv_bucket_name = av_directory_bucket
+      IMPORTING
+        oo_result = lo_result ).
+
+    " Verify that the session was created successfully
+    cl_abap_unit_assert=>assert_bound(
+      act = lo_result
+      msg = |Session creation failed for directory bucket { av_directory_bucket }| ).
+
+    " Verify session credentials were returned
+    DATA(lo_credentials) = lo_result->get_credentials( ).
+    cl_abap_unit_assert=>assert_bound(
+      act = lo_credentials
+      msg = |Session credentials were not returned| ).
+
+    " Verify AccessKeyId is present
+    DATA(lv_access_key) = lo_credentials->get_accesskeyid( ).
+    cl_abap_unit_assert=>assert_not_initial(
+      act = lv_access_key
+      msg = |AccessKeyId was not returned in session credentials| ).
+
+    " Verify SecretAccessKey is present
+    DATA(lv_secret_key) = lo_credentials->get_secretaccesskey( ).
+    cl_abap_unit_assert=>assert_not_initial(
+      act = lv_secret_key
+      msg = |SecretAccessKey was not returned in session credentials| ).
+
+    " Verify SessionToken is present
+    DATA(lv_session_token) = lo_credentials->get_sessiontoken( ).
+    cl_abap_unit_assert=>assert_not_initial(
+      act = lv_session_token
+      msg = |SessionToken was not returned in session credentials| ).
 
   ENDMETHOD.
 
