@@ -12,7 +12,7 @@ CLASS ltc_awsex_cl_sfn_actions DEFINITION FOR TESTING DURATION LONG RISK LEVEL D
     CLASS-DATA ao_sfn TYPE REF TO /aws1/if_sfn.
     CLASS-DATA ao_iam TYPE REF TO /aws1/if_iam.
     CLASS-DATA ao_sfn_actions TYPE REF TO /awsex/cl_sfn_actions.
-    CLASS-DATA av_role_name TYPE /aws1/iamrolenametype.
+    CLASS-DATA av_role_name TYPE /aws1/iamrolename.
     CLASS-DATA av_role_arn TYPE /aws1/sfnarn.
     CLASS-DATA av_state_machine_name TYPE /aws1/sfnname.
     CLASS-DATA av_activity_name TYPE /aws1/sfnname.
@@ -198,7 +198,7 @@ CLASS ltc_awsex_cl_sfn_actions IMPLEMENTATION.
       |\}|.
 
     TRY.
-        DATA(lo_create_role_result) = ao_iam->createrole(
+        DATA(lo_role) = ao_iam->createrole(
           iv_rolename = av_role_name
           iv_assumerolepolicydocument = lv_trust_policy
           it_tags = VALUE #( ( NEW /aws1/cl_iamtag(
@@ -206,13 +206,11 @@ CLASS ltc_awsex_cl_sfn_actions IMPLEMENTATION.
             iv_value = 'true'
           ) ) )
         ).
-        DATA(lo_role) = lo_create_role_result->get_role( ).
         ov_role_arn = lo_role->get_arn( ).
-      CATCH /aws1/cx_iamentityalrdyexex.
+      CATCH /aws1/cx_iamentityalrdyex.
         " Role already exists, get its ARN
-        DATA(lo_get_role_result) = ao_iam->getrole( iv_rolename = av_role_name ).
-        DATA(lo_existing_role) = lo_get_role_result->get_role( ).
-        ov_role_arn = lo_existing_role->get_arn( ).
+        DATA(lo_get_role) = ao_iam->getrole( iv_rolename = av_role_name ).
+        ov_role_arn = lo_get_role->get_arn( ).
     ENDTRY.
 
     " Attach basic execution policy
@@ -451,37 +449,15 @@ CLASS ltc_awsex_cl_sfn_actions IMPLEMENTATION.
       iv_state_machine_arn = lv_temp_arn
     ).
 
-    " Wait for deletion to complete - check for DELETING status or DoesNotExist exception
-    DATA lv_waited TYPE i VALUE 0.
-    DATA lv_deletion_verified TYPE abap_bool VALUE abap_false.
-    DO.
-      TRY.
-          DATA(lo_desc_result) = ao_sfn->describestatemachine(
-            iv_statemachinearn = lv_temp_arn
-          ).
-          DATA(lv_status) = lo_desc_result->get_status( ).
-          " If status is DELETING, the deletion is in progress (success)
-          IF lv_status = 'DELETING'.
-            lv_deletion_verified = abap_true.
-            EXIT.
-          ENDIF.
-        CATCH /aws1/cx_sfnstatemachinedoes00.
-          " State machine no longer exists - deletion complete
-          lv_deletion_verified = abap_true.
-          EXIT.
-      ENDTRY.
-
-      WAIT UP TO 2 SECONDS.
-      lv_waited = lv_waited + 2.
-      IF lv_waited >= 60.
-        EXIT.
-      ENDIF.
-    ENDDO.
-
-    cl_abap_unit_assert=>assert_true(
-      act = lv_deletion_verified
-      msg = 'State machine should have been deleted or be in DELETING status'
-    ).
+    " Verify deletion
+    TRY.
+        ao_sfn->describestatemachine(
+          iv_statemachinearn = lv_temp_arn
+        ).
+        cl_abap_unit_assert=>fail( msg = 'State machine should have been deleted' ).
+      CATCH /aws1/cx_sfnstatemachinedoes00.
+        " Expected - state machine was deleted
+    ENDTRY.
   ENDMETHOD.
 
   METHOD create_activity.
