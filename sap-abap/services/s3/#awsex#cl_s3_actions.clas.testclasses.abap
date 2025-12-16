@@ -94,9 +94,24 @@ CLASS ltc_awsex_cl_s3_actions IMPLEMENTATION.
     ao_s3->putbuckettagging( iv_bucket = av_bucket_delete io_tagging = lo_tagging ).
 
     " Create a directory bucket for S3 Express One Zone testing
-    " Use use1-az4 availability zone as an example
+    " Directory bucket names must:
+    " - Be 3-63 characters
+    " - Only contain lowercase letters, numbers, and hyphens
+    " - Begin and end with a letter or number
+    " - Include suffix --zone-id--x-s3
+    " - Not use prohibited prefixes like amzn-s3-demo-
     DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
-    av_directory_bucket = |sap-abap-{ lv_uuid }--use1-az4--x-s3|.
+    " Convert UUID to lowercase and remove any special characters
+    TRANSLATE lv_uuid TO LOWER CASE.
+    " Create a valid base name (must start with letter, be lowercase)
+    DATA(lv_base_name) = |sapabap{ lv_uuid }|.
+    " Ensure total length with suffix doesn't exceed 63 chars
+    " Suffix '--use1-az4--x-s3' is 16 chars, so base can be max 47 chars
+    IF strlen( lv_base_name ) > 47.
+      lv_base_name = lv_base_name+0(47).
+    ENDIF.
+    av_directory_bucket = |{ lv_base_name }--use1-az4--x-s3|.
+    
     TRY.
         DATA(lo_bucket_config) = NEW /aws1/cl_s3_createbucketconf(
           io_bucket = NEW /aws1/cl_s3_bucketinfo(
