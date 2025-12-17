@@ -406,7 +406,7 @@ CLASS /AWSEX/CL_GLA_ACTIONS IMPLEMENTATION.
         oo_result = lo_gla->getvaultnotifications(
           iv_vaultname = iv_vault_name
         ).
-        DATA(lo_notif_config) = oo_result->get_vaultnotifconfig( ).
+        DATA(lo_notif_config) = oo_result->get_vaultnotificationconfig( ).
         IF lo_notif_config IS BOUND.
           DATA(lv_sns_topic) = lo_notif_config->get_snstopic( ).
           DATA(lt_events) = lo_notif_config->get_events( ).
