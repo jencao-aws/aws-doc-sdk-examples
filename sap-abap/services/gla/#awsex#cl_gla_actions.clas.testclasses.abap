@@ -50,9 +50,10 @@ CLASS ltc_/awsex/cl_gla_actions IMPLEMENTATION.
 
     " Generate unique vault name
     DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
+    TRANSLATE lv_uuid TO LOWER CASE.
     av_vault_name = |glacier-test-{ lv_uuid }|.
 
-    " Generate S3 bucket name for job outputs
+    " Generate S3 bucket name for job outputs (must be lowercase)
     av_s3_bucket = |glacier-test-bucket-{ lv_uuid }|.
 
     " Create an SNS topic for notifications
