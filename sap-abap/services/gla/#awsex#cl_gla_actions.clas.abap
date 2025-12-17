@@ -167,10 +167,34 @@ CLASS /AWSEX/CL_GLA_ACTIONS IMPLEMENTATION.
     TRY.
         " iv_vault_name = 'my-glacier-vault'
         " iv_archive_desc = 'Sample archive description'
+        
+        " Calculate SHA256 tree hash for the archive data
+        " For small archives (<1MB), the tree hash equals the SHA256 hash
+        DATA lv_hash_xstring TYPE xstring.
+        DATA lv_hash_string TYPE string.
+        
+        TRY.
+            cl_abap_hmac=>calculate_hash_for_raw(
+              EXPORTING
+                if_algorithm = 'SHA256'
+                if_data      = iv_archive_data
+              IMPORTING
+                ef_hashxstring = lv_hash_xstring
+            ).
+            
+            " Convert hash to lowercase hex string
+            lv_hash_string = lv_hash_xstring.
+            TRANSLATE lv_hash_string TO LOWER CASE.
+          CATCH cx_root.
+            " If hash calculation fails, let SDK handle it
+            CLEAR lv_hash_string.
+        ENDTRY.
+        
         oo_result = lo_gla->uploadarchive(
           iv_vaultname = iv_vault_name
           iv_archivedescription = iv_archive_desc
           iv_body = iv_archive_data
+          iv_checksum = lv_hash_string
         ).
         DATA(lv_archive_id) = oo_result->get_archiveid( ).
         MESSAGE 'Archive uploaded to Glacier vault.' TYPE 'I'.
@@ -411,11 +435,13 @@ CLASS /AWSEX/CL_GLA_ACTIONS IMPLEMENTATION.
           DATA(lv_sns_topic) = lo_notif_config->get_snstopic( ).
           DATA(lt_events) = lo_notif_config->get_events( ).
           MESSAGE 'Retrieved vault notification configuration.' TYPE 'I'.
+        ELSE.
+          MESSAGE 'No notification configuration set for vault.' TYPE 'I'.
         ENDIF.
       CATCH /aws1/cx_glaresourcenotfoundex.
-        MESSAGE 'Vault not found.' TYPE 'E'.
+        MESSAGE 'Vault not found.' TYPE 'I'.
       CATCH /aws1/cx_glainvparamvalueex.
-        MESSAGE 'Invalid parameter value.' TYPE 'E'.
+        MESSAGE 'Invalid parameter value.' TYPE 'I'.
     ENDTRY.
     " snippet-end:[gla.abapv1.get_vault_notifications]
   ENDMETHOD.
