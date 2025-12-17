@@ -578,17 +578,17 @@ CLASS ltc_awsex_cl_cwt_actions IMPLEMENTATION.
     DATA lt_dimensions TYPE /aws1/cl_cwtdimension=>tt_dimensions.
     DATA lv_start_time TYPE /aws1/cwttimestamp.
     DATA lv_end_time TYPE /aws1/cwttimestamp.
-    DATA lv_timestamp TYPE timestamp.
 
     CONSTANTS cv_namespace TYPE /aws1/cwtnamespace VALUE 'AWS/S3'.
     CONSTANTS cv_metric_name TYPE /aws1/cwtmetricname VALUE 'BucketSizeBytes'.
     CONSTANTS cv_period TYPE /aws1/cwtperiod VALUE 86400.
 
-    " Get current timestamp and set start/end times
-    GET TIME STAMP FIELD lv_timestamp.
-    lv_end_time = lv_timestamp.
-    " Set start time to 1 day ago
-    lv_start_time = lv_timestamp - ( 86400 ).
+    " Get current timestamp and set start/end times using TIMESTAMPL
+    GET TIME STAMP FIELD lv_end_time.
+    
+    " Set start time to 1 day ago using TIMESTAMPL arithmetic
+    " TIMESTAMPL is in format YYYYMMDDHHMMSS.NNNNNNN (seconds with 7 decimal places)
+    lv_start_time = lv_end_time - ( 1 * 86400 * 10000000 ). " 1 day = 86400 seconds, multiplied by 10^7 for decimal places
 
     " Build statistics list
     APPEND NEW /aws1/cl_cwtstatistics_w( iv_value = 'Average' ) TO lt_statistics.
