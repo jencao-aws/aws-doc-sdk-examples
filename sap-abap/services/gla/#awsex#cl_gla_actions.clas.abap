@@ -372,8 +372,8 @@ CLASS /AWSEX/CL_GLA_ACTIONS IMPLEMENTATION.
         " iv_vault_name = 'my-glacier-vault'
         " iv_sns_topic = 'arn:aws:sns:region:account-id:topic-name'
         DATA lt_events TYPE /aws1/cl_glanotifeventlist_w=>tt_notificationeventlist.
-        APPEND 'ArchiveRetrievalCompleted' TO lt_events.
-        APPEND 'InventoryRetrievalCompleted' TO lt_events.
+        APPEND NEW /aws1/cl_glanotifeventlist_w( iv_value = 'ArchiveRetrievalCompleted' ) TO lt_events.
+        APPEND NEW /aws1/cl_glanotifeventlist_w( iv_value = 'InventoryRetrievalCompleted' ) TO lt_events.
 
         DATA(lo_notification_config) = NEW /aws1/cl_glavaultnotifconfig(
           iv_snstopic = iv_sns_topic
