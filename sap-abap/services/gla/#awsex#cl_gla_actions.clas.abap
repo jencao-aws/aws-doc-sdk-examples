@@ -183,7 +183,7 @@ CLASS /AWSEX/CL_GLA_ACTIONS IMPLEMENTATION.
                 if_data          = iv_archive_data
                 if_length        = 0
               IMPORTING
-                ef_hashxstring   = lv_hash_xstring
+                ef_hmacxstring   = lv_hash_xstring
             ).
           CATCH cx_root.
             " If HMAC calculation fails, try alternative method
