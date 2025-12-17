@@ -639,9 +639,6 @@ CLASS ltc_awsex_cl_cwt_actions IMPLEMENTATION.
     MESSAGE 'Get metric statistics executed successfully.' TYPE 'I'.
 
   ENDMETHOD.
-    ENDTRY.
-
-  ENDMETHOD.
 
 
 ENDCLASS.
