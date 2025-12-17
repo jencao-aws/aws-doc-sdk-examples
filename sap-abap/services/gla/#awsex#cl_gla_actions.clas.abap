@@ -174,13 +174,12 @@ CLASS /AWSEX/CL_GLA_ACTIONS IMPLEMENTATION.
         DATA lv_hash_string TYPE string.
         
         TRY.
-            cl_abap_hmac=>calculate_hash_for_raw(
+            CALL FUNCTION 'CALCULATE_HASH_FOR_RAW'
               EXPORTING
-                if_algorithm = 'SHA256'
-                if_data      = iv_archive_data
+                alg  = 'SHA256'
+                data = iv_archive_data
               IMPORTING
-                ef_hashxstring = lv_hash_xstring
-            ).
+                hash = lv_hash_xstring.
             
             " Convert hash to lowercase hex string
             lv_hash_string = lv_hash_xstring.
