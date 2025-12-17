@@ -18,6 +18,7 @@ CLASS ltc_awsex_cl_cwt_actions DEFINITION FOR TESTING DURATION LONG RISK LEVEL D
     METHODS enable_alarm_actions FOR TESTING RAISING /aws1/cx_rt_generic cx_uuid_error.
     METHODS disable_alarm_actions FOR TESTING RAISING /aws1/cx_rt_generic cx_uuid_error.
     METHODS list_metrics FOR TESTING  RAISING /aws1/cx_rt_generic cx_uuid_error.
+    METHODS get_metric_statistics FOR TESTING RAISING /aws1/cx_rt_generic cx_uuid_error.
     METHODS setup RAISING /aws1/cx_rt_generic /awsex/cx_generic.
 
 ENDCLASS.       "ltc_awsex_cl_cwt_actions
@@ -566,6 +567,65 @@ CLASS ltc_awsex_cl_cwt_actions IMPLEMENTATION.
 
     ao_s3->deletebucket(
       iv_bucket = lv_bucket_name ).
+
+  ENDMETHOD.
+
+
+  METHOD get_metric_statistics.
+
+    DATA lo_result TYPE REF TO /aws1/cl_cwtgetmettatsoutput.
+    DATA lt_statistics TYPE /aws1/cl_cwtstatistics_w=>tt_statistics.
+    DATA lt_dimensions TYPE /aws1/cl_cwtdimension=>tt_dimensions.
+    DATA lv_start_time TYPE /aws1/cwttimestamp.
+    DATA lv_end_time TYPE /aws1/cwttimestamp.
+    DATA lv_timestamp TYPE timestamp.
+
+    CONSTANTS cv_namespace TYPE /aws1/cwtnamespace VALUE 'AWS/S3'.
+    CONSTANTS cv_metric_name TYPE /aws1/cwtmetricname VALUE 'BucketSizeBytes'.
+    CONSTANTS cv_period TYPE /aws1/cwtperiod VALUE 86400.
+
+    " Get current timestamp and set start/end times
+    GET TIME STAMP FIELD lv_timestamp.
+    lv_end_time = lv_timestamp.
+    " Set start time to 1 day ago
+    lv_start_time = lv_timestamp - ( 86400 ).
+
+    " Build statistics list
+    APPEND NEW /aws1/cl_cwtstatistics_w( iv_value = 'Average' ) TO lt_statistics.
+    APPEND NEW /aws1/cl_cwtstatistics_w( iv_value = 'Sum' ) TO lt_statistics.
+
+    " Build dimensions for S3 metrics
+    APPEND NEW /aws1/cl_cwtdimension(
+      iv_name = 'StorageType'
+      iv_value = 'StandardStorage'
+    ) TO lt_dimensions.
+
+    " Test get_metric_statistics
+    ao_cwt_actions->get_metric_statistics(
+      EXPORTING
+        iv_metric_name = cv_metric_name
+        iv_namespace = cv_namespace
+        iv_start_time = lv_start_time
+        iv_end_time = lv_end_time
+        iv_period = cv_period
+        it_statistics = lt_statistics
+        it_dimensions = lt_dimensions
+      IMPORTING
+        oo_result = lo_result
+    ).
+
+    " Validation - result should be returned
+    cl_abap_unit_assert=>assert_bound(
+      act = lo_result
+      msg = 'Get metric statistics should return a result'
+    ).
+
+    " Check that datapoints are returned (may be empty for new metrics)
+    DATA(lt_datapoints) = lo_result->get_datapoints( ).
+    cl_abap_unit_assert=>assert_not_initial(
+      act = lt_datapoints
+      msg = 'Datapoints should be initialized'
+    ).
 
   ENDMETHOD.
 

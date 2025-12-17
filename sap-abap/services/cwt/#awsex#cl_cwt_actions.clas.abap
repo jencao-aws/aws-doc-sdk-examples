@@ -52,6 +52,19 @@ CLASS /awsex/cl_cwt_actions DEFINITION
         !iv_period              TYPE /aws1/cwtperiod
       RAISING
         /aws1/cx_rt_generic .
+    METHODS get_metric_statistics
+      IMPORTING
+        !iv_metric_name  TYPE /aws1/cwtmetricname
+        !iv_namespace    TYPE /aws1/cwtnamespace
+        !iv_start_time   TYPE /aws1/cwttimestamp
+        !iv_end_time     TYPE /aws1/cwttimestamp
+        !iv_period       TYPE /aws1/cwtperiod
+        !it_statistics   TYPE /aws1/cl_cwtstatistics_w=>tt_statistics
+        !it_dimensions   TYPE /aws1/cl_cwtdimension=>tt_dimensions OPTIONAL
+      EXPORTING
+        !oo_result       TYPE REF TO /aws1/cl_cwtgetmettatsoutput
+      RAISING
+        /aws1/cx_rt_generic .
   PROTECTED SECTION.
   PRIVATE SECTION.
 ENDCLASS.
@@ -197,6 +210,40 @@ CLASS /AWSEX/CL_CWT_ACTIONS IMPLEMENTATION.
         MESSAGE 'The request processing has exceeded the limit' TYPE 'E'.
     ENDTRY.
     "snippet-end:[cwt.abapv1.put_metric_alarm]
+
+  ENDMETHOD.
+
+
+  METHOD get_metric_statistics.
+
+    CONSTANTS cv_pfl TYPE /aws1/rt_profile_id VALUE 'ZCODE_DEMO'.
+
+    DATA(lo_session) = /aws1/cl_rt_session_aws=>create( cv_pfl ).
+    DATA(lo_cwt) = /aws1/cl_cwt_factory=>create( lo_session ).
+
+    " snippet-start:[cwt.abapv1.get_metric_statistics]
+    TRY.
+        oo_result = lo_cwt->getmetricstatistics(
+          iv_namespace = iv_namespace
+          iv_metricname = iv_metric_name
+          it_dimensions = it_dimensions
+          iv_starttime = iv_start_time
+          iv_endtime = iv_end_time
+          iv_period = iv_period
+          it_statistics = it_statistics
+        ).
+        DATA(lt_datapoints) = oo_result->get_datapoints( ).
+        MESSAGE |Retrieved { lines( lt_datapoints ) } datapoints.| TYPE 'I'.
+      CATCH /aws1/cx_cwtinternalsvcfault INTO DATA(lo_internal_fault).
+        MESSAGE lo_internal_fault->get_text( ) TYPE 'E'.
+      CATCH /aws1/cx_cwtinvprmcombinatio00 INTO DATA(lo_invalid_combo).
+        MESSAGE lo_invalid_combo->get_text( ) TYPE 'E'.
+      CATCH /aws1/cx_cwtinvparamvalueex INTO DATA(lo_invalid_param).
+        MESSAGE lo_invalid_param->get_text( ) TYPE 'E'.
+      CATCH /aws1/cx_cwtmissingrequiredp00 INTO DATA(lo_missing_param).
+        MESSAGE lo_missing_param->get_text( ) TYPE 'E'.
+    ENDTRY.
+    " snippet-end:[cwt.abapv1.get_metric_statistics]
 
   ENDMETHOD.
 ENDCLASS.
