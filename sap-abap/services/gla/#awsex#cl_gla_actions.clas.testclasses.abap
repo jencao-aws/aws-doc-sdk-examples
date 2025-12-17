@@ -92,6 +92,25 @@ CLASS ltc_/awsex/cl_gla_actions IMPLEMENTATION.
       CATCH /aws1/cx_rt_generic.
         " Vault might already exist, continue
     ENDTRY.
+
+    " Set up vault notifications for testing
+    TRY.
+        DATA lt_events TYPE /aws1/cl_glanotifeventlist_w=>tt_notificationeventlist.
+        APPEND NEW /aws1/cl_glanotifeventlist_w( iv_value = 'ArchiveRetrievalCompleted' ) TO lt_events.
+        APPEND NEW /aws1/cl_glanotifeventlist_w( iv_value = 'InventoryRetrievalCompleted' ) TO lt_events.
+
+        DATA(lo_notification_config) = NEW /aws1/cl_glavaultnotifconfig(
+          iv_snstopic = av_sns_topic_arn
+          it_events = lt_events
+        ).
+
+        ao_gla->setvaultnotifications(
+          iv_vaultname = av_vault_name
+          io_vaultnotificationconfig = lo_notification_config
+        ).
+      CATCH /aws1/cx_rt_generic.
+        " If setting notifications fails, tests will handle it
+    ENDTRY.
   ENDMETHOD.
 
   METHOD class_teardown.

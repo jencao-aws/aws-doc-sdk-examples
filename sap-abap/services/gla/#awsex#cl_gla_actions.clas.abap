@@ -173,21 +173,36 @@ CLASS /AWSEX/CL_GLA_ACTIONS IMPLEMENTATION.
         DATA lv_hash_xstring TYPE xstring.
         DATA lv_hash_string TYPE string.
         
-        TRY.
-            CALL FUNCTION 'CALCULATE_HASH_FOR_RAW'
-              EXPORTING
-                alg  = 'SHA256'
-                data = iv_archive_data
-              IMPORTING
-                hash = lv_hash_xstring.
-            
-            " Convert hash to lowercase hex string
-            lv_hash_string = lv_hash_xstring.
-            TRANSLATE lv_hash_string TO LOWER CASE.
-          CATCH cx_root.
-            " If hash calculation fails, let SDK handle it
-            CLEAR lv_hash_string.
-        ENDTRY.
+        CALL FUNCTION 'CALCULATE_HASH_FOR_RAW'
+          EXPORTING
+            alg  = 'SHA256'
+            data = iv_archive_data
+          IMPORTING
+            hash = lv_hash_xstring.
+        
+        " Convert xstring to hex string representation
+        " Each byte in xstring becomes 2 hex characters
+        DATA lv_hash_length TYPE i.
+        DATA lv_hex_offset TYPE i.
+        DATA lv_byte_value TYPE x LENGTH 1.
+        DATA lv_hex_byte TYPE c LENGTH 2.
+        
+        lv_hash_length = xstrlen( lv_hash_xstring ).
+        CLEAR lv_hash_string.
+        
+        DO lv_hash_length TIMES.
+          lv_hex_offset = sy-index - 1.
+          lv_byte_value = lv_hash_xstring+lv_hex_offset(1).
+          WRITE lv_byte_value TO lv_hex_byte LEFT-JUSTIFIED NO-ZERO.
+          " Ensure two characters by padding with 0 if needed
+          WHILE strlen( lv_hex_byte ) < 2.
+            lv_hex_byte = |0{ lv_hex_byte }|.
+          ENDWHILE.
+          lv_hash_string = |{ lv_hash_string }{ lv_hex_byte }|.
+        ENDDO.
+        
+        CONDENSE lv_hash_string NO-GAPS.
+        TRANSLATE lv_hash_string TO LOWER CASE.
         
         oo_result = lo_gla->uploadarchive(
           iv_vaultname = iv_vault_name
@@ -439,8 +454,10 @@ CLASS /AWSEX/CL_GLA_ACTIONS IMPLEMENTATION.
         ENDIF.
       CATCH /aws1/cx_glaresourcenotfoundex.
         MESSAGE 'Vault not found.' TYPE 'I'.
+        RAISE EXCEPTION TYPE /aws1/cx_glaresourcenotfoundex.
       CATCH /aws1/cx_glainvparamvalueex.
         MESSAGE 'Invalid parameter value.' TYPE 'I'.
+        RAISE EXCEPTION TYPE /aws1/cx_glainvparamvalueex.
     ENDTRY.
     " snippet-end:[gla.abapv1.get_vault_notifications]
   ENDMETHOD.
