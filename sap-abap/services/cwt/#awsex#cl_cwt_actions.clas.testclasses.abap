@@ -615,39 +615,30 @@ CLASS ltc_awsex_cl_cwt_actions IMPLEMENTATION.
     ) TO lt_dimensions.
 
     " Test get_metric_statistics
-    TRY.
-        ao_cwt_actions->get_metric_statistics(
-          EXPORTING
-            iv_metric_name = cv_metric_name
-            iv_namespace = cv_namespace
-            iv_start_time = lv_start_time
-            iv_end_time = lv_end_time
-            iv_period = cv_period
-            it_statistics = lt_statistics
-            it_dimensions = lt_dimensions
-          IMPORTING
-            oo_result = lo_result
-        ).
+    ao_cwt_actions->get_metric_statistics(
+      EXPORTING
+        iv_metric_name = cv_metric_name
+        iv_namespace = cv_namespace
+        iv_start_time = lv_start_time
+        iv_end_time = lv_end_time
+        iv_period = cv_period
+        it_statistics = lt_statistics
+        it_dimensions = lt_dimensions
+      IMPORTING
+        oo_result = lo_result
+    ).
 
-        " Validation - result should be returned
-        cl_abap_unit_assert=>assert_bound(
-          act = lo_result
-          msg = 'Get metric statistics should return a result'
-        ).
+    " Validation - result should be returned
+    cl_abap_unit_assert=>assert_bound(
+      act = lo_result
+      msg = 'Get metric statistics should return a result'
+    ).
 
-        " Check that datapoints are returned (may be empty for new metrics)
-        DATA(lt_datapoints) = lo_result->get_datapoints( ).
-        cl_abap_unit_assert=>assert_not_initial(
-          act = lt_datapoints
-          msg = 'Datapoints should be initialized'
-        ).
-      CATCH /aws1/cx_rt_generic INTO DATA(lo_exception).
-        " If there's an issue with timestamps or no data, that's acceptable for this test
-        " We're primarily testing that the method can be called correctly
-        cl_abap_unit_assert=>assert_true(
-          act = abap_true
-          msg = |Method executed. Exception occurred: { lo_exception->get_text( ) }|
-        ).
+    " The method executed successfully - datapoints may be empty if no data exists
+    " This is expected behavior for metrics that haven't been published
+    MESSAGE 'Get metric statistics executed successfully.' TYPE 'I'.
+
+  ENDMETHOD.
     ENDTRY.
 
   ENDMETHOD.
