@@ -172,10 +172,11 @@ CLASS /AWSEX/CL_GLA_ACTIONS IMPLEMENTATION.
         " For small archives (<1MB), the tree hash equals the SHA256 hash
         DATA lv_hash_xstring TYPE xstring.
         DATA lv_hash_string TYPE string.
+        DATA lv_algorithm TYPE string VALUE 'SHA256'.
         
         CALL FUNCTION 'CALCULATE_HASH_FOR_RAW'
           EXPORTING
-            alg  = 'SHA256'
+            alg  = lv_algorithm
             data = iv_archive_data
           IMPORTING
             hash = lv_hash_xstring.
