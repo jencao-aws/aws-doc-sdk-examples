@@ -16,7 +16,7 @@ CLASS ltc_/awsex/cl_gla_actions DEFINITION FOR TESTING
     CLASS-DATA ao_sns TYPE REF TO /aws1/if_sns.
     CLASS-DATA av_vault_name TYPE /aws1/glastring.
     CLASS-DATA av_archive_id TYPE /aws1/glastring.
-    CLASS-DATA av_sns_topic_arn TYPE /aws1/snsarn.
+    CLASS-DATA av_sns_topic_arn TYPE /aws1/snstopicarn.
     CLASS-DATA av_s3_bucket TYPE /aws1/s3_bucketname.
     CLASS-DATA av_test_job_id TYPE /aws1/glastring.
     CLASS-DATA av_archive_job_id TYPE /aws1/glastring.
