@@ -48,15 +48,15 @@ CLASS /awsex/cl_frh_actions IMPLEMENTATION.
         ).
         MESSAGE 'Record sent successfully.' TYPE 'I'.
       CATCH /aws1/cx_frhinvalidargumentex INTO DATA(lo_invalid_arg).
-        MESSAGE lo_invalid_arg->get_text( ) TYPE 'E'.
+        MESSAGE lo_invalid_arg->get_text( ) TYPE 'I'.
       CATCH /aws1/cx_frhinvkmsresourceex INTO DATA(lo_invalid_kms).
-        MESSAGE lo_invalid_kms->get_text( ) TYPE 'E'.
+        MESSAGE lo_invalid_kms->get_text( ) TYPE 'I'.
       CATCH /aws1/cx_frhinvalidsourceex INTO DATA(lo_invalid_source).
-        MESSAGE lo_invalid_source->get_text( ) TYPE 'E'.
+        MESSAGE lo_invalid_source->get_text( ) TYPE 'I'.
       CATCH /aws1/cx_frhresourcenotfoundex INTO DATA(lo_notfound).
-        MESSAGE lo_notfound->get_text( ) TYPE 'E'.
+        MESSAGE lo_notfound->get_text( ) TYPE 'I'.
       CATCH /aws1/cx_frhserviceunavailex INTO DATA(lo_unavailable).
-        MESSAGE lo_unavailable->get_text( ) TYPE 'E'.
+        MESSAGE lo_unavailable->get_text( ) TYPE 'I'.
     ENDTRY.
     " snippet-end:[frh.abapv1.put_record]
   ENDMETHOD.
@@ -80,15 +80,15 @@ CLASS /awsex/cl_frh_actions IMPLEMENTATION.
           MESSAGE 'All records in batch sent successfully.' TYPE 'I'.
         ENDIF.
       CATCH /aws1/cx_frhinvalidargumentex INTO DATA(lo_invalid_arg).
-        MESSAGE lo_invalid_arg->get_text( ) TYPE 'E'.
+        MESSAGE lo_invalid_arg->get_text( ) TYPE 'I'.
       CATCH /aws1/cx_frhinvkmsresourceex INTO DATA(lo_invalid_kms).
-        MESSAGE lo_invalid_kms->get_text( ) TYPE 'E'.
+        MESSAGE lo_invalid_kms->get_text( ) TYPE 'I'.
       CATCH /aws1/cx_frhinvalidsourceex INTO DATA(lo_invalid_source).
-        MESSAGE lo_invalid_source->get_text( ) TYPE 'E'.
+        MESSAGE lo_invalid_source->get_text( ) TYPE 'I'.
       CATCH /aws1/cx_frhresourcenotfoundex INTO DATA(lo_notfound).
-        MESSAGE lo_notfound->get_text( ) TYPE 'E'.
+        MESSAGE lo_notfound->get_text( ) TYPE 'I'.
       CATCH /aws1/cx_frhserviceunavailex INTO DATA(lo_unavailable).
-        MESSAGE lo_unavailable->get_text( ) TYPE 'E'.
+        MESSAGE lo_unavailable->get_text( ) TYPE 'I'.
     ENDTRY.
     " snippet-end:[frh.abapv1.put_record_batch]
   ENDMETHOD.

@@ -128,11 +128,16 @@ CLASS ltc_awsex_cl_frh_actions IMPLEMENTATION.
           )
         ).
 
-        " Wait for stream to become active
-        WAIT UP TO 30 SECONDS.
-
       CATCH /aws1/cx_frhresourceinuseex INTO DATA(lo_stream_exists).
         " Stream already exists, continue
+    ENDTRY.
+
+    " Wait for stream to become active
+    TRY.
+        wait_for_stream_active( av_delivery_stream_name ).
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_wait_error).
+        " Fail the test if stream doesn't become active
+        cl_abap_unit_assert=>fail( msg = |Failed to create active stream: { lo_wait_error->get_text( ) }| ).
     ENDTRY.
 
   ENDMETHOD.
@@ -245,7 +250,9 @@ CLASS ltc_awsex_cl_frh_actions IMPLEMENTATION.
       ENDTRY.
 
       IF lv_waited >= lv_max_wait.
-        MESSAGE 'Timeout waiting for delivery stream to become active' TYPE 'E'.
+        RAISE EXCEPTION TYPE /aws1/cx_rt_generic
+          EXPORTING
+            av_err_text = 'Timeout waiting for delivery stream to become active'.
       ENDIF.
 
       WAIT UP TO 5 SECONDS.
