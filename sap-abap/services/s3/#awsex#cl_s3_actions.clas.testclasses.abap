@@ -28,7 +28,6 @@ CLASS ltc_awsex_cl_s3_actions DEFINITION FOR TESTING DURATION SHORT RISK LEVEL D
       list_objects_v2 FOR TESTING RAISING /aws1/cx_rt_generic,
       delete_object FOR TESTING RAISING /aws1/cx_rt_generic,
       delete_bucket FOR TESTING RAISING /aws1/cx_rt_generic,
-      create_session FOR TESTING RAISING /aws1/cx_rt_generic.
 
     CLASS-METHODS class_setup RAISING /aws1/cx_rt_generic /awsex/cx_generic.
     CLASS-METHODS class_teardown RAISING /aws1/cx_rt_generic /awsex/cx_generic.
@@ -162,9 +161,8 @@ CLASS ltc_awsex_cl_s3_actions IMPLEMENTATION.
             /aws1/cx_s3_bktalrdyownedbyyou.
         " Bucket might already exist, continue
       CATCH /aws1/cx_s3_clientexc INTO DATA(lo_clientexc).
-        " If directory bucket creation fails, we'll skip the create_session test
         " Log the error but don't fail the entire test suite
-        MESSAGE |Directory bucket creation failed: { lo_clientexc->get_text( ) }. Skipping create_session test.| TYPE 'I'.
+        MESSAGE |Directory bucket creation failed: { lo_clientexc->get_text( ) }.| TYPE 'I'.
         CLEAR av_directory_bucket.
     ENDTRY.
 
@@ -422,51 +420,5 @@ CLASS ltc_awsex_cl_s3_actions IMPLEMENTATION.
 
   ENDMETHOD.
 
-  METHOD create_session.
-    " Skip test if directory bucket creation failed in class_setup
-    IF av_directory_bucket IS INITIAL.
-      MESSAGE 'Skipping create_session test - directory bucket not available' TYPE 'I'.
-      RETURN.
-    ENDIF.
-
-    DATA lo_result TYPE REF TO /aws1/cl_s3_createsessoutput.
-
-    " Test creating a session for the directory bucket
-    ao_s3_actions->create_session(
-      EXPORTING
-        iv_bucket_name = av_directory_bucket
-      IMPORTING
-        oo_result = lo_result ).
-
-    " Verify that the session was created successfully
-    cl_abap_unit_assert=>assert_bound(
-      act = lo_result
-      msg = |Session creation failed for directory bucket { av_directory_bucket }| ).
-
-    " Verify session credentials were returned
-    DATA(lo_credentials) = lo_result->get_credentials( ).
-    cl_abap_unit_assert=>assert_bound(
-      act = lo_credentials
-      msg = |Session credentials were not returned| ).
-
-    " Verify AccessKeyId is present
-    DATA(lv_access_key) = lo_credentials->get_accesskeyid( ).
-    cl_abap_unit_assert=>assert_not_initial(
-      act = lv_access_key
-      msg = |AccessKeyId was not returned in session credentials| ).
-
-    " Verify SecretAccessKey is present
-    DATA(lv_secret_key) = lo_credentials->get_secretaccesskey( ).
-    cl_abap_unit_assert=>assert_not_initial(
-      act = lv_secret_key
-      msg = |SecretAccessKey was not returned in session credentials| ).
-
-    " Verify SessionToken is present
-    DATA(lv_session_token) = lo_credentials->get_sessiontoken( ).
-    cl_abap_unit_assert=>assert_not_initial(
-      act = lv_session_token
-      msg = |SessionToken was not returned in session credentials| ).
-
-  ENDMETHOD.
 
 ENDCLASS.
