@@ -674,29 +674,19 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
       ENDIF.
     ENDDO.
 
-    " If we reach here, timeout occurred
+    " If we reach here, timeout occurred - raise a simple exception
     DATA lv_fail_msg TYPE string.
     DATA lv_timeout_str TYPE string.
     lv_timeout_str = iv_max_wait_sec.
     CONDENSE lv_timeout_str.
     
-    CONCATENATE 'Application' iv_application_name 'did not reach status' iv_target_status 'within' lv_timeout_str 'seconds'
+    CONCATENATE 'Timeout: Application' iv_application_name 'status' lv_current_status
       INTO lv_fail_msg SEPARATED BY space.
     
-    " Truncate message if too long for exception parameter
-    DATA lv_msg_part1 TYPE string.
-    DATA lv_msg_part2 TYPE string.
-    IF strlen( lv_fail_msg ) > 50.
-      lv_msg_part1 = lv_fail_msg(50).
-      lv_msg_part2 = lv_fail_msg+50.
-    ELSE.
-      lv_msg_part1 = lv_fail_msg.
-    ENDIF.
+    MESSAGE lv_fail_msg TYPE 'I'.
     
-    RAISE EXCEPTION TYPE /aws1/cx_rt_generic
-      EXPORTING
-        av_msgv1 = lv_msg_part1
-        av_msgv2 = lv_msg_part2.
+    " Raise a generic exception for test framework to catch
+    RAISE EXCEPTION TYPE cx_sy_dyn_call_error.
 
   ENDMETHOD.
 
