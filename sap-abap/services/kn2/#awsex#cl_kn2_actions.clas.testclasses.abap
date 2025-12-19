@@ -676,12 +676,27 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
 
     " If we reach here, timeout occurred
     DATA lv_fail_msg TYPE string.
-    CONCATENATE 'Application' iv_application_name 'did not reach status' iv_target_status 'within' iv_max_wait_sec 'seconds'
+    DATA lv_timeout_str TYPE string.
+    lv_timeout_str = iv_max_wait_sec.
+    CONDENSE lv_timeout_str.
+    
+    CONCATENATE 'Application' iv_application_name 'did not reach status' iv_target_status 'within' lv_timeout_str 'seconds'
       INTO lv_fail_msg SEPARATED BY space.
+    
+    " Truncate message if too long for exception parameter
+    DATA lv_msg_part1 TYPE string.
+    DATA lv_msg_part2 TYPE string.
+    IF strlen( lv_fail_msg ) > 50.
+      lv_msg_part1 = lv_fail_msg(50).
+      lv_msg_part2 = lv_fail_msg+50.
+    ELSE.
+      lv_msg_part1 = lv_fail_msg.
+    ENDIF.
+    
     RAISE EXCEPTION TYPE /aws1/cx_rt_generic
       EXPORTING
-        av_msgv1 = lv_fail_msg(50)
-        av_msgv2 = iv_target_status.
+        av_msgv1 = lv_msg_part1
+        av_msgv2 = lv_msg_part2.
 
   ENDMETHOD.
 
