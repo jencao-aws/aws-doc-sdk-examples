@@ -62,14 +62,16 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
     DATA(lv_account_id) = ao_session->get_account_id( ).
     DATA(lv_region) = ao_session->get_region( ).
 
-    av_application_name = |sap-abap-kn2-app-{ lv_uuid }|.
-    av_role_name = |sap-abap-kn2-role-{ lv_uuid }|.
-    av_input_stream_name = |sap-abap-kn2-input-{ lv_uuid }|.
-    av_output_stream_name = |sap-abap-kn2-output-{ lv_uuid }|.
+    CONCATENATE 'sap-abap-kn2-app-' lv_uuid INTO av_application_name.
+    CONCATENATE 'sap-abap-kn2-role-' lv_uuid INTO av_role_name.
+    CONCATENATE 'sap-abap-kn2-input-' lv_uuid INTO av_input_stream_name.
+    CONCATENATE 'sap-abap-kn2-output-' lv_uuid INTO av_output_stream_name.
 
     " Create IAM role for Kinesis Analytics
-    DATA(lv_trust_policy) = |'{"Version":"2012-10-17","Statement":[{"Effect":"Allow",| &&
-                            |"Principal":{"Service":"kinesisanalytics.amazonaws.com"},"Action":"sts:AssumeRole"}]}|.
+    DATA(lv_trust_policy) = '{"Version":"2012-10-17","Statement":[' &&
+                             '{"Effect":"Allow","Principal":' &&
+                             '{"Service":"kinesisanalytics.amazonaws.com"},' &&
+                             '"Action":"sts:AssumeRole"}]}'.
     DATA(lo_create_role_result) = ao_iam->createrole(
         iv_rolename = av_role_name
         iv_assumerolepolicydocument = lv_trust_policy
@@ -78,15 +80,23 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
     av_role_arn = lo_create_role_result->get_role( )->get_arn( ).
 
     " Create policy for Kinesis Analytics role
-    DATA(lv_policy_doc) = |'{"Version":"2012-10-17","Statement":[| &&
-        |{"Sid":"ReadInputKinesis","Effect":"Allow",| &&
-        |"Action":["kinesis:DescribeStream","kinesis:GetShardIterator","kinesis:GetRecords"],| &&
-        |"Resource":"arn:aws:kinesis:{ lv_region }:{ lv_account_id }:stream/{ av_input_stream_name }"},| &&
-        |{"Sid":"WriteOutputKinesis","Effect":"Allow",| &&
-        |"Action":["kinesis:DescribeStream","kinesis:PutRecord","kinesis:PutRecords"],| &&
-        |"Resource":"arn:aws:kinesis:{ lv_region }:{ lv_account_id }:stream/{ av_output_stream_name }"}]}|.
+    DATA lv_input_resource TYPE string.
+    DATA lv_output_resource TYPE string.
+    CONCATENATE 'arn:aws:kinesis:' lv_region ':' lv_account_id ':stream/' av_input_stream_name
+      INTO lv_input_resource.
+    CONCATENATE 'arn:aws:kinesis:' lv_region ':' lv_account_id ':stream/' av_output_stream_name
+      INTO lv_output_resource.
 
-    DATA(lv_policy_name) = |sap-abap-kn2-policy-{ lv_uuid }|.
+    DATA(lv_policy_doc) = '{"Version":"2012-10-17","Statement":[' &&
+        '{"Sid":"ReadInputKinesis","Effect":"Allow",' &&
+        '"Action":["kinesis:DescribeStream","kinesis:GetShardIterator","kinesis:GetRecords"],' &&
+        '"Resource":"' && lv_input_resource && '"},' &&
+        '{"Sid":"WriteOutputKinesis","Effect":"Allow",' &&
+        '"Action":["kinesis:DescribeStream","kinesis:PutRecord","kinesis:PutRecords"],' &&
+        '"Resource":"' && lv_output_resource && '"}]}'.
+
+    DATA lv_policy_name TYPE string.
+    CONCATENATE 'sap-abap-kn2-policy-' lv_uuid INTO lv_policy_name.
     DATA(lo_policy_result) = ao_iam->createpolicy(
         iv_policyname = lv_policy_name
         iv_policydocument = lv_policy_doc
@@ -103,7 +113,6 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
         iv_shardcount = 1 ).
 
     " Tag input stream
-    DATA(lv_input_arn) = |arn:aws:kinesis:{ lv_region }:{ lv_account_id }:stream/{ av_input_stream_name }|.
     ao_kns->addtagstostream(
         iv_streamname = av_input_stream_name
         it_tags = VALUE /aws1/cl_knstag=>tt_tagmap(
@@ -137,7 +146,10 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
           " Stream not yet available
       ENDTRY.
       IF lv_wait_count >= 60.
-        cl_abap_unit_assert=>fail( msg = |Input stream { av_input_stream_name } did not become active| ).
+        DATA lv_msg TYPE string.
+        CONCATENATE 'Input stream' av_input_stream_name 'did not become active'
+          INTO lv_msg SEPARATED BY space.
+        cl_abap_unit_assert=>fail( msg = lv_msg ).
       ENDIF.
       WAIT UP TO 5 SECONDS.
     ENDDO.
@@ -156,7 +168,10 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
           " Stream not yet available
       ENDTRY.
       IF lv_wait_count >= 60.
-        cl_abap_unit_assert=>fail( msg = |Output stream { av_output_stream_name } did not become active| ).
+        DATA lv_msg2 TYPE string.
+        CONCATENATE 'Output stream' av_output_stream_name 'did not become active'
+          INTO lv_msg2 SEPARATED BY space.
+        cl_abap_unit_assert=>fail( msg = lv_msg2 ).
       ENDIF.
       WAIT UP TO 5 SECONDS.
     ENDDO.
@@ -422,14 +437,14 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
     DATA(lv_status) = lo_app_desc->get_applicationdetail( )->get_applicationstatus( ).
     cl_abap_unit_assert=>assert_true(
         act = xsdbool( lv_status = 'READY' OR lv_status = 'STOPPING' )
-        msg = |Application did not stop successfully. Status: { lv_status }| ).
+        msg = 'Application did not stop successfully' ).
 
   ENDMETHOD.
 
   METHOD describe_snapshot.
     " First create a snapshot of the application
     DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
-    av_snapshot_name = |sap-kn2-snap-{ lv_uuid }|.
+    CONCATENATE 'sap-kn2-snap-' lv_uuid INTO av_snapshot_name.
 
     " Make sure application is not running
     DATA(lo_app_desc) = ao_kn2->describeapplication( iv_applicationname = av_application_name ).
@@ -553,8 +568,10 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
       ENDTRY.
 
       IF lv_wait_count >= lv_max_iterations.
-        cl_abap_unit_assert=>fail(
-            msg = |Application { iv_application_name } did not reach status { iv_target_status }. Current: { lv_current_status }| ).
+        DATA lv_fail_msg TYPE string.
+        CONCATENATE 'Application' iv_application_name 'did not reach target status'
+          INTO lv_fail_msg SEPARATED BY space.
+        cl_abap_unit_assert=>fail( msg = lv_fail_msg ).
       ENDIF.
 
       WAIT UP TO 10 SECONDS.
