@@ -280,6 +280,11 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD describe_application.
+    " Skip if application wasn't created
+    IF av_application_name IS INITIAL.
+      cl_abap_unit_assert=>fail( msg = 'Application name is not set - create_application may have failed' ).
+    ENDIF.
+
     DATA(lo_result) = ao_kn2_actions->describe_application( av_application_name ).
 
     cl_abap_unit_assert=>assert_bound(
@@ -298,21 +303,41 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD discover_input_schema.
-    " Put some test data into the input stream
+    " Put multiple test records into the input stream
     DATA lt_records TYPE /aws1/cl_knsputrecsreqentry=>tt_putrecordsrequestentrylist.
-    DATA(lv_xstring_data) = /aws1/cl_rt_util=>string_to_xstring(
+    
+    DATA(lv_xstring_data1) = /aws1/cl_rt_util=>string_to_xstring(
       `{` &&
         `"price": 50.00,` &&
         `"ticker": "AAPL"` &&
       `}` ).
+    DATA(lv_xstring_data2) = /aws1/cl_rt_util=>string_to_xstring(
+      `{` &&
+        `"price": 100.00,` &&
+        `"ticker": "GOOGL"` &&
+      `}` ).
+    DATA(lv_xstring_data3) = /aws1/cl_rt_util=>string_to_xstring(
+      `{` &&
+        `"price": 150.00,` &&
+        `"ticker": "MSFT"` &&
+      `}` ).
 
     APPEND NEW /aws1/cl_knsputrecsreqentry(
-        iv_data = lv_xstring_data
+        iv_data = lv_xstring_data1
         iv_partitionkey = 'partition1' ) TO lt_records.
+    APPEND NEW /aws1/cl_knsputrecsreqentry(
+        iv_data = lv_xstring_data2
+        iv_partitionkey = 'partition2' ) TO lt_records.
+    APPEND NEW /aws1/cl_knsputrecsreqentry(
+        iv_data = lv_xstring_data3
+        iv_partitionkey = 'partition3' ) TO lt_records.
 
     ao_kns->putrecords(
         iv_streamname = av_input_stream_name
         it_records = lt_records ).
+
+    " Wait for records to propagate
+    WAIT UP TO 5 SECONDS.
 
     " Discover the schema
     DATA(lo_result) = ao_kn2_actions->discover_input_schema(
@@ -331,21 +356,42 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD add_input.
-    " First discover the schema
+    " First discover the schema - put multiple records
     DATA lt_records TYPE /aws1/cl_knsputrecsreqentry=>tt_putrecordsrequestentrylist.
-    DATA(lv_xstring_data) = /aws1/cl_rt_util=>string_to_xstring(
+    
+    " Add multiple records to ensure minimum threshold
+    DATA(lv_xstring_data1) = /aws1/cl_rt_util=>string_to_xstring(
       `{` &&
         `"price": 50.00,` &&
         `"ticker": "AAPL"` &&
       `}` ).
+    DATA(lv_xstring_data2) = /aws1/cl_rt_util=>string_to_xstring(
+      `{` &&
+        `"price": 100.00,` &&
+        `"ticker": "GOOGL"` &&
+      `}` ).
+    DATA(lv_xstring_data3) = /aws1/cl_rt_util=>string_to_xstring(
+      `{` &&
+        `"price": 150.00,` &&
+        `"ticker": "MSFT"` &&
+      `}` ).
 
     APPEND NEW /aws1/cl_knsputrecsreqentry(
-        iv_data = lv_xstring_data
+        iv_data = lv_xstring_data1
         iv_partitionkey = 'partition1' ) TO lt_records.
+    APPEND NEW /aws1/cl_knsputrecsreqentry(
+        iv_data = lv_xstring_data2
+        iv_partitionkey = 'partition2' ) TO lt_records.
+    APPEND NEW /aws1/cl_knsputrecsreqentry(
+        iv_data = lv_xstring_data3
+        iv_partitionkey = 'partition3' ) TO lt_records.
 
     ao_kns->putrecords(
         iv_streamname = av_input_stream_name
         it_records = lt_records ).
+
+    " Wait for records to propagate
+    WAIT UP TO 5 SECONDS.
 
     DATA(lo_discover_result) = ao_kn2->discoverinputschema(
         iv_resourcearn = av_input_stream_arn
@@ -379,6 +425,11 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD add_output.
+    " Skip if no valid version ID
+    IF av_application_version_id IS INITIAL OR av_application_version_id = 0.
+      cl_abap_unit_assert=>fail( msg = 'Application version ID is not set - create_application may have failed' ).
+    ENDIF.
+
     DATA(lo_result) = ao_kn2_actions->add_output(
         iv_application_name = av_application_name
         iv_current_application_vrs_id = av_application_version_id
@@ -395,6 +446,11 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD update_code.
+    " Skip if no valid version ID
+    IF av_application_version_id IS INITIAL OR av_application_version_id = 0.
+      cl_abap_unit_assert=>fail( msg = 'Application version ID is not set - create_application may have failed' ).
+    ENDIF.
+
     " Simple SQL code that copies from input to output
     DATA(lv_sql_code) = 'CREATE OR REPLACE STREAM "DESTINATION_SQL_STREAM" (ticker VARCHAR(4), price DOUBLE);' &&
                         cl_abap_char_utilities=>newline &&
@@ -419,6 +475,11 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD start_application.
+    " Skip if application or input ID wasn't set
+    IF av_application_name IS INITIAL OR av_input_id IS INITIAL.
+      cl_abap_unit_assert=>fail( msg = 'Application name or input ID is not set - previous tests may have failed' ).
+    ENDIF.
+
     " Make sure application is ready
     wait_for_application_status(
         iv_application_name = av_application_name
@@ -445,6 +506,11 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD stop_application.
+    " Skip if application wasn't created
+    IF av_application_name IS INITIAL.
+      cl_abap_unit_assert=>fail( msg = 'Application name is not set - create_application may have failed' ).
+    ENDIF.
+
     ao_kn2_actions->stop_application( av_application_name ).
 
     " Wait for application to stop - reduced timeout
@@ -463,6 +529,11 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD describe_snapshot.
+    " Skip if application wasn't created
+    IF av_application_name IS INITIAL.
+      cl_abap_unit_assert=>fail( msg = 'Application name is not set - create_application may have failed' ).
+    ENDIF.
+
     " First create a snapshot of the application
     DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
     CONCATENATE 'sap-kn2-snap-' lv_uuid INTO av_snapshot_name.
@@ -536,6 +607,11 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD delete_application.
+    " Skip if application wasn't created
+    IF av_application_name IS INITIAL OR av_create_timestamp IS INITIAL.
+      cl_abap_unit_assert=>fail( msg = 'Application name or timestamp is not set - create_application may have failed' ).
+    ENDIF.
+
     " Make sure application is not running
     DATA(lo_app_desc) = ao_kn2->describeapplication( iv_applicationname = av_application_name ).
     DATA(lv_status) = lo_app_desc->get_applicationdetail( )->get_applicationstatus( ).
@@ -572,6 +648,9 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
     DATA lv_max_iterations TYPE i.
 
     lv_max_iterations = iv_max_wait_sec / 10.
+    IF lv_max_iterations < 1.
+      lv_max_iterations = 1.
+    ENDIF.
 
     DO lv_max_iterations TIMES.
       lv_wait_count = lv_wait_count + 1.
@@ -581,24 +660,28 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
           lv_current_status = lo_app_desc->get_applicationdetail( )->get_applicationstatus( ).
 
           IF lv_current_status = iv_target_status.
-            EXIT.
+            RETURN.
           ENDIF.
 
         CATCH /aws1/cx_kn2resourcenotfoundex.
           IF iv_target_status = 'DELETED'.
-            EXIT.
+            RETURN.
           ENDIF.
       ENDTRY.
 
-      IF lv_wait_count >= lv_max_iterations.
-        DATA lv_fail_msg TYPE string.
-        CONCATENATE 'Application' iv_application_name 'did not reach target status'
-          INTO lv_fail_msg SEPARATED BY space.
-        cl_abap_unit_assert=>fail( msg = lv_fail_msg ).
+      IF lv_wait_count < lv_max_iterations.
+        WAIT UP TO 10 SECONDS.
       ENDIF.
-
-      WAIT UP TO 10 SECONDS.
     ENDDO.
+
+    " If we reach here, timeout occurred
+    DATA lv_fail_msg TYPE string.
+    CONCATENATE 'Application' iv_application_name 'did not reach status' iv_target_status 'within' iv_max_wait_sec 'seconds'
+      INTO lv_fail_msg SEPARATED BY space.
+    RAISE EXCEPTION TYPE /aws1/cx_rt_generic
+      EXPORTING
+        av_msgv1 = lv_fail_msg(50)
+        av_msgv2 = iv_target_status.
 
   ENDMETHOD.
 
