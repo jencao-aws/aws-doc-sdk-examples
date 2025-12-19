@@ -720,7 +720,8 @@ CLASS /AWSEX/CL_EC2_ACTIONS IMPLEMENTATION.
         MESSAGE 'VPC created.' TYPE 'I'.
       CATCH /aws1/cx_rt_service_generic INTO DATA(lo_exception).
         DATA(lv_error) = |"{ lo_exception->av_err_code }" - { lo_exception->av_err_msg }|.
-        MESSAGE lv_error TYPE 'E'.
+        MESSAGE lv_error TYPE 'I'.
+        RAISE EXCEPTION lo_exception.
     ENDTRY.
     " snippet-end:[ec2.abapv1.create_vpc]
   ENDMETHOD.
