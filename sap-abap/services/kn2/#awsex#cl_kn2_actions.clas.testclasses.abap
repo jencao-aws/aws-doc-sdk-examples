@@ -45,8 +45,8 @@ CLASS ltc_awsex_cl_kn2_actions DEFINITION FOR TESTING DURATION LONG RISK LEVEL D
         iv_application_name TYPE /aws1/kn2applicationname
         iv_target_status    TYPE /aws1/kn2applicationstatus
         iv_max_wait_sec     TYPE i DEFAULT 300
-      RAISING
-        /aws1/cx_rt_generic.
+      RETURNING
+        VALUE(rv_success)   TYPE abap_bool.
 ENDCLASS.
 
 CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
@@ -272,15 +272,11 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
     av_create_timestamp = lo_app_detail->get_createtimestamp( ).
 
     " Wait for application to be ready - increased timeout for application creation
-    TRY.
-        wait_for_application_status(
-            iv_application_name = av_application_name
-            iv_target_status = 'READY'
-            iv_max_wait_sec = 300 ).
-      CATCH /aws1/cx_rt_generic.
-        " Application may not be ready yet, but that's okay for this test
-        " The version ID and timestamp are already captured
-    ENDTRY.
+    " Ignore result as version ID is already captured
+    wait_for_application_status(
+        iv_application_name = av_application_name
+        iv_target_status = 'READY'
+        iv_max_wait_sec = 300 ).
 
   ENDMETHOD.
 
@@ -491,29 +487,25 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
     ENDIF.
 
     " Make sure application is ready
-    TRY.
-        wait_for_application_status(
-            iv_application_name = av_application_name
-            iv_target_status = 'READY'
-            iv_max_wait_sec = 60 ).
-      CATCH /aws1/cx_rt_generic.
-        " Application may not be ready, skip this test
-        RETURN.
-    ENDTRY.
+    DATA(lv_ready) = wait_for_application_status(
+        iv_application_name = av_application_name
+        iv_target_status = 'READY'
+        iv_max_wait_sec = 60 ).
+    
+    IF lv_ready = abap_false.
+      " Application not ready, skip test
+      RETURN.
+    ENDIF.
 
     ao_kn2_actions->start_application(
         iv_application_name = av_application_name
         iv_input_id = av_input_id ).
 
     " Wait for application to be running - reduced timeout to 3 minutes
-    TRY.
-        wait_for_application_status(
-            iv_application_name = av_application_name
-            iv_target_status = 'RUNNING'
-            iv_max_wait_sec = 180 ).
-      CATCH /aws1/cx_rt_generic.
-        " Timeout waiting for running status
-    ENDTRY.
+    wait_for_application_status(
+        iv_application_name = av_application_name
+        iv_target_status = 'RUNNING'
+        iv_max_wait_sec = 180 ).
 
     " Verify application is running
     DATA(lo_app_desc) = ao_kn2->describeapplication( iv_applicationname = av_application_name ).
@@ -533,14 +525,10 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
     ao_kn2_actions->stop_application( av_application_name ).
 
     " Wait for application to stop - reduced timeout
-    TRY.
-        wait_for_application_status(
-            iv_application_name = av_application_name
-            iv_target_status = 'READY'
-            iv_max_wait_sec = 120 ).
-      CATCH /aws1/cx_rt_generic.
-        " Timeout waiting for stop
-    ENDTRY.
+    wait_for_application_status(
+        iv_application_name = av_application_name
+        iv_target_status = 'READY'
+        iv_max_wait_sec = 120 ).
 
     " Verify application is stopped
     DATA(lo_app_desc) = ao_kn2->describeapplication( iv_applicationname = av_application_name ).
@@ -567,14 +555,10 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
 
     IF lv_status = 'RUNNING'.
       ao_kn2->stopapplication( iv_applicationname = av_application_name ).
-      TRY.
-          wait_for_application_status(
-              iv_application_name = av_application_name
-              iv_target_status = 'READY'
-              iv_max_wait_sec = 120 ).
-        CATCH /aws1/cx_rt_generic.
-          " Timeout waiting for stop
-      ENDTRY.
+      wait_for_application_status(
+          iv_application_name = av_application_name
+          iv_target_status = 'READY'
+          iv_max_wait_sec = 120 ).
     ENDIF.
 
     " Create a snapshot
@@ -645,14 +629,10 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
 
     IF lv_status = 'RUNNING'.
       ao_kn2->stopapplication( iv_applicationname = av_application_name ).
-      TRY.
-          wait_for_application_status(
-              iv_application_name = av_application_name
-              iv_target_status = 'READY'
-              iv_max_wait_sec = 120 ).
-        CATCH /aws1/cx_rt_generic.
-          " Timeout waiting for stop
-      ENDTRY.
+      wait_for_application_status(
+          iv_application_name = av_application_name
+          iv_target_status = 'READY'
+          iv_max_wait_sec = 120 ).
     ENDIF.
 
     ao_kn2_actions->delete_application(
@@ -678,6 +658,8 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
     DATA lv_current_status TYPE /aws1/kn2applicationstatus.
     DATA lv_max_iterations TYPE i.
 
+    rv_success = abap_false.
+    
     lv_max_iterations = iv_max_wait_sec / 10.
     IF lv_max_iterations < 1.
       lv_max_iterations = 1.
@@ -691,11 +673,13 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
           lv_current_status = lo_app_desc->get_applicationdetail( )->get_applicationstatus( ).
 
           IF lv_current_status = iv_target_status.
+            rv_success = abap_true.
             RETURN.
           ENDIF.
 
         CATCH /aws1/cx_kn2resourcenotfoundex.
           IF iv_target_status = 'DELETED'.
+            rv_success = abap_true.
             RETURN.
           ENDIF.
       ENDTRY.
@@ -705,17 +689,7 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
       ENDIF.
     ENDDO.
 
-    " If we reach here, timeout occurred
-    DATA lv_fail_msg TYPE string.
-    DATA lv_timeout_str TYPE string.
-    lv_timeout_str = iv_max_wait_sec.
-    CONDENSE lv_timeout_str.
-    
-    CONCATENATE 'Timeout waiting for' iv_target_status 'status. Current:' lv_current_status
-      INTO lv_fail_msg SEPARATED BY space.
-    
-    " Raise exception without MESSAGE statement to avoid E001 error
-    RAISE EXCEPTION TYPE /aws1/cx_rt_generic.
+    " If we reach here, timeout occurred - return false
 
   ENDMETHOD.
 
