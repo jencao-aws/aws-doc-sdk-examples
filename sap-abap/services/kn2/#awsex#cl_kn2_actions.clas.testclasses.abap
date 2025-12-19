@@ -140,9 +140,9 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
     DATA lv_stream_status TYPE /aws1/knsstreamstatus.
     DATA lv_wait_count TYPE i.
 
-    " Wait for input stream
+    " Wait for input stream - reduced to 24 iterations (2 minutes max)
     lv_wait_count = 0.
-    DO 60 TIMES.
+    DO 24 TIMES.
       lv_wait_count = lv_wait_count + 1.
       TRY.
           DATA(lo_stream_desc) = ao_kns->describestream( iv_streamname = av_input_stream_name ).
@@ -153,7 +153,7 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
         CATCH /aws1/cx_knsresourcenotfoundex.
           " Stream not yet available
       ENDTRY.
-      IF lv_wait_count >= 60.
+      IF lv_wait_count >= 24.
         DATA lv_msg TYPE string.
         CONCATENATE 'Input stream' av_input_stream_name 'did not become active'
           INTO lv_msg SEPARATED BY space.
@@ -162,9 +162,9 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
       WAIT UP TO 5 SECONDS.
     ENDDO.
 
-    " Wait for output stream
+    " Wait for output stream - reduced to 24 iterations (2 minutes max)
     lv_wait_count = 0.
-    DO 60 TIMES.
+    DO 24 TIMES.
       lv_wait_count = lv_wait_count + 1.
       TRY.
           lo_stream_desc = ao_kns->describestream( iv_streamname = av_output_stream_name ).
@@ -175,7 +175,7 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
         CATCH /aws1/cx_knsresourcenotfoundex.
           " Stream not yet available
       ENDTRY.
-      IF lv_wait_count >= 60.
+      IF lv_wait_count >= 24.
         DATA lv_msg2 TYPE string.
         CONCATENATE 'Output stream' av_output_stream_name 'did not become active'
           INTO lv_msg2 SEPARATED BY space.
@@ -271,10 +271,11 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
     av_application_version_id = lo_app_detail->get_applicationversionid( ).
     av_create_timestamp = lo_app_detail->get_createtimestamp( ).
 
-    " Wait for application to be ready
+    " Wait for application to be ready - reduced timeout
     wait_for_application_status(
         iv_application_name = av_application_name
-        iv_target_status = 'READY' ).
+        iv_target_status = 'READY'
+        iv_max_wait_sec = 120 ).
 
   ENDMETHOD.
 
@@ -421,17 +422,18 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
     " Make sure application is ready
     wait_for_application_status(
         iv_application_name = av_application_name
-        iv_target_status = 'READY' ).
+        iv_target_status = 'READY'
+        iv_max_wait_sec = 60 ).
 
     ao_kn2_actions->start_application(
         iv_application_name = av_application_name
         iv_input_id = av_input_id ).
 
-    " Wait for application to be running
+    " Wait for application to be running - reduced timeout to 3 minutes
     wait_for_application_status(
         iv_application_name = av_application_name
         iv_target_status = 'RUNNING'
-        iv_max_wait_sec = 600 ).
+        iv_max_wait_sec = 180 ).
 
     " Verify application is running
     DATA(lo_app_desc) = ao_kn2->describeapplication( iv_applicationname = av_application_name ).
@@ -445,10 +447,11 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
   METHOD stop_application.
     ao_kn2_actions->stop_application( av_application_name ).
 
-    " Wait for application to stop
+    " Wait for application to stop - reduced timeout
     wait_for_application_status(
         iv_application_name = av_application_name
-        iv_target_status = 'READY' ).
+        iv_target_status = 'READY'
+        iv_max_wait_sec = 120 ).
 
     " Verify application is stopped
     DATA(lo_app_desc) = ao_kn2->describeapplication( iv_applicationname = av_application_name ).
@@ -472,7 +475,8 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
       ao_kn2->stopapplication( iv_applicationname = av_application_name ).
       wait_for_application_status(
           iv_application_name = av_application_name
-          iv_target_status = 'READY' ).
+          iv_target_status = 'READY'
+          iv_max_wait_sec = 120 ).
     ENDIF.
 
     " Create a snapshot
@@ -481,10 +485,10 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
             iv_applicationname = av_application_name
             iv_snapshotname = av_snapshot_name ).
 
-        " Wait for snapshot to be ready
+        " Wait for snapshot to be ready - reduced to 24 iterations (2 minutes max)
         DATA lv_snapshot_status TYPE /aws1/kn2snapshotstatus.
         DATA lv_wait_count TYPE i VALUE 0.
-        DO 60 TIMES.
+        DO 24 TIMES.
           lv_wait_count = lv_wait_count + 1.
           DATA(lo_snap_desc) = ao_kn2->describeapplicationsnapshot(
               iv_applicationname = av_application_name
@@ -493,7 +497,7 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
           IF lv_snapshot_status = 'READY'.
             EXIT.
           ENDIF.
-          IF lv_wait_count >= 60.
+          IF lv_wait_count >= 24.
             cl_abap_unit_assert=>fail( msg = 'Snapshot did not become ready' ).
           ENDIF.
           WAIT UP TO 5 SECONDS.
@@ -540,7 +544,8 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
       ao_kn2->stopapplication( iv_applicationname = av_application_name ).
       wait_for_application_status(
           iv_application_name = av_application_name
-          iv_target_status = 'READY' ).
+          iv_target_status = 'READY'
+          iv_max_wait_sec = 120 ).
     ENDIF.
 
     ao_kn2_actions->delete_application(
