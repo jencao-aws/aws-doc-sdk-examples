@@ -356,9 +356,16 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD describe_instance_types.
-    " Call with simple filters that are known to work
+    " Call with valid filter for current generation instances
     DATA(lo_result) = ao_ec2_actions->describe_instance_types(
-      VALUE /aws1/cl_ec2filter=>tt_filterlist( ) ).
+      VALUE /aws1/cl_ec2filter=>tt_filterlist(
+        ( NEW /aws1/cl_ec2filter(
+            iv_name = 'current-generation'
+            it_values = VALUE /aws1/cl_ec2valuestringlist_w=>tt_valuestringlist(
+              ( NEW /aws1/cl_ec2valuestringlist_w( 'true' ) )
+            )
+        ) )
+      ) ).
     cl_abap_unit_assert=>assert_not_initial(
       act = lo_result->get_instancetypes( )
       msg = |Failed to retrieve instance type information| ).
