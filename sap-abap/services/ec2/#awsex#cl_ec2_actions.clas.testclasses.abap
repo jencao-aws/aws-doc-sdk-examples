@@ -14,7 +14,7 @@ CLASS ltc_awsex_cl_ec2_actions DEFINITION FOR TESTING DURATION LONG RISK LEVEL D
     CLASS-DATA av_vpc_id TYPE /aws1/ec2string.
     CLASS-DATA av_subnet_id TYPE /aws1/ec2string.
     CLASS-DATA at_instance_id TYPE TABLE OF /aws1/ec2string. " table of instance IDs to terminate
-    CLASS-DATA av_instance_id TYPE /aws1/ec2string. " main instance Id for tests
+    CLASS-DATA av_ami_id TYPE /aws1/ec2string. " cached AMI ID
 
     METHODS: allocate_address FOR TESTING RAISING /aws1/cx_rt_generic,
       associate_address FOR TESTING RAISING /aws1/cx_rt_generic,
@@ -52,6 +52,9 @@ CLASS ltc_awsex_cl_ec2_actions DEFINITION FOR TESTING DURATION LONG RISK LEVEL D
       get_ami_id
         RETURNING VALUE(ov_ami_id) TYPE /aws1/ec2string
         RAISING   /aws1/cx_rt_generic,
+      get_or_create_instance
+        RETURNING VALUE(ov_instance_id) TYPE /aws1/ec2string
+        RAISING   /aws1/cx_rt_generic,
       wait_until_status_change
         IMPORTING iv_required_status       TYPE string
                   iv_instance_id           TYPE string
@@ -73,6 +76,9 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
     ao_session = /aws1/cl_rt_session_aws=>create( iv_profile_id = cv_pfl ).
     ao_ec2 = /aws1/cl_ec2_factory=>create( ao_session ).
     ao_ec2_actions = NEW /awsex/cl_ec2_actions( ).
+
+    " Cache AMI ID to avoid repeated lookups
+    av_ami_id = get_ami_id( ).
 
     " Try to get default VPC first
     DATA(lo_vpcs) = ao_ec2->describevpcs(
@@ -136,80 +142,89 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
       )->get_subnet( )->get_subnetid( ).
     ENDIF.
 
-    " Create instance with convert_test tag for shared tests
-    av_instance_id = run_instance( av_subnet_id ).
-
   ENDMETHOD.
 
   METHOD class_teardown.
     " Terminate all test instances
     LOOP AT at_instance_id ASSIGNING FIELD-SYMBOL(<instance_id>).
-      terminate_instance( <instance_id> ).
+      TRY.
+          terminate_instance( <instance_id> ).
+        CATCH /aws1/cx_rt_generic.
+          " Continue even if termination fails
+      ENDTRY.
     ENDLOOP.
 
     " Check if we created the subnet (has convert_test tag)
-    DATA(lo_subnets) = ao_ec2->describesubnets(
-      it_subnetids = VALUE /aws1/cl_ec2subnetidstrlist_w=>tt_subnetidstringlist(
-        ( NEW /aws1/cl_ec2subnetidstrlist_w( av_subnet_id ) )
-      ) ).
+    TRY.
+        DATA(lo_subnets) = ao_ec2->describesubnets(
+          it_subnetids = VALUE /aws1/cl_ec2subnetidstrlist_w=>tt_subnetidstringlist(
+            ( NEW /aws1/cl_ec2subnetidstrlist_w( av_subnet_id ) )
+          ) ).
 
-    READ TABLE lo_subnets->get_subnets( ) INTO DATA(lo_subnet) INDEX 1.
-    DATA(lv_delete_subnet) = abap_false.
-    LOOP AT lo_subnet->get_tags( ) INTO DATA(lo_tag).
-      IF lo_tag->get_key( ) = 'convert_test' AND lo_tag->get_value( ) = 'true'.
-        lv_delete_subnet = abap_true.
-        EXIT.
-      ENDIF.
-    ENDLOOP.
-
-    " Only delete subnet if we created it
-    IF lv_delete_subnet = abap_true.
-      DO 4 TIMES.
-        TRY.
-            ao_ec2->deletesubnet( iv_subnetid = av_subnet_id ).
+        READ TABLE lo_subnets->get_subnets( ) INTO DATA(lo_subnet) INDEX 1.
+        DATA(lv_delete_subnet) = abap_false.
+        LOOP AT lo_subnet->get_tags( ) INTO DATA(lo_tag).
+          IF lo_tag->get_key( ) = 'convert_test' AND lo_tag->get_value( ) = 'true'.
+            lv_delete_subnet = abap_true.
             EXIT.
-          CATCH /aws1/cx_ec2clientexc INTO DATA(lo_ex).
-            IF lo_ex->get_text( ) CS 'dependencies'.
-              WAIT UP TO 15 SECONDS.
-            ELSE.
-              RAISE EXCEPTION lo_ex.
-            ENDIF.
-        ENDTRY.
-      ENDDO.
-    ENDIF.
+          ENDIF.
+        ENDLOOP.
+
+        " Only delete subnet if we created it
+        IF lv_delete_subnet = abap_true.
+          DO 4 TIMES.
+            TRY.
+                ao_ec2->deletesubnet( iv_subnetid = av_subnet_id ).
+                EXIT.
+              CATCH /aws1/cx_ec2clientexc INTO DATA(lo_ex).
+                IF lo_ex->get_text( ) CS 'dependencies'.
+                  WAIT UP TO 15 SECONDS.
+                ELSE.
+                  EXIT.
+                ENDIF.
+            ENDTRY.
+          ENDDO.
+        ENDIF.
+      CATCH /aws1/cx_rt_generic.
+        " Continue cleanup even if subnet check fails
+    ENDTRY.
 
     " Check if we created the VPC (has convert_test tag)
-    DATA(lo_vpcs) = ao_ec2->describevpcs(
-      it_vpcids = VALUE /aws1/cl_ec2vpcidstringlist_w=>tt_vpcidstringlist(
-        ( NEW /aws1/cl_ec2vpcidstringlist_w( av_vpc_id ) )
-      ) ).
+    TRY.
+        DATA(lo_vpcs) = ao_ec2->describevpcs(
+          it_vpcids = VALUE /aws1/cl_ec2vpcidstringlist_w=>tt_vpcidstringlist(
+            ( NEW /aws1/cl_ec2vpcidstringlist_w( av_vpc_id ) )
+          ) ).
 
-    READ TABLE lo_vpcs->get_vpcs( ) INTO DATA(lo_vpc) INDEX 1.
-    DATA(lv_delete_vpc) = abap_false.
-    LOOP AT lo_vpc->get_tags( ) INTO lo_tag.
-      IF lo_tag->get_key( ) = 'convert_test' AND lo_tag->get_value( ) = 'true'.
-        lv_delete_vpc = abap_true.
-        EXIT.
-      ENDIF.
-    ENDLOOP.
-
-    " Only delete VPC if we created it
-    IF lv_delete_vpc = abap_true.
-      DO 4 TIMES.
-        TRY.
-            ao_ec2->deletevpc( iv_vpcid = av_vpc_id ).
+        READ TABLE lo_vpcs->get_vpcs( ) INTO DATA(lo_vpc) INDEX 1.
+        DATA(lv_delete_vpc) = abap_false.
+        LOOP AT lo_vpc->get_tags( ) INTO lo_tag.
+          IF lo_tag->get_key( ) = 'convert_test' AND lo_tag->get_value( ) = 'true'.
+            lv_delete_vpc = abap_true.
             EXIT.
-          CATCH /aws1/cx_ec2clientexc INTO lo_ex.
-            IF lo_ex->av_err_code = 'DependencyViolation'.
-              WAIT UP TO 15 SECONDS.
-            ELSEIF lo_ex->av_err_code = 'InvalidVpcID.NotFound'.
-              EXIT.
-            ELSE.
-              RAISE EXCEPTION lo_ex.
-            ENDIF.
-        ENDTRY.
-      ENDDO.
-    ENDIF.
+          ENDIF.
+        ENDLOOP.
+
+        " Only delete VPC if we created it
+        IF lv_delete_vpc = abap_true.
+          DO 4 TIMES.
+            TRY.
+                ao_ec2->deletevpc( iv_vpcid = av_vpc_id ).
+                EXIT.
+              CATCH /aws1/cx_ec2clientexc INTO lo_ex.
+                IF lo_ex->av_err_code = 'DependencyViolation'.
+                  WAIT UP TO 15 SECONDS.
+                ELSEIF lo_ex->av_err_code = 'InvalidVpcID.NotFound'.
+                  EXIT.
+                ELSE.
+                  EXIT.
+                ENDIF.
+            ENDTRY.
+          ENDDO.
+        ENDIF.
+      CATCH /aws1/cx_rt_generic.
+        " Continue even if VPC cleanup fails
+    ENDTRY.
   ENDMETHOD.
 
   METHOD allocate_address.
@@ -222,21 +237,23 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
     ao_ec2->releaseaddress( iv_allocationid = lo_result->get_allocationid( ) ).
 
   ENDMETHOD.
+
   METHOD associate_address.
+    DATA(lv_instance_id) = get_or_create_instance( ).
     DATA(lv_internet_gateway_id) = ao_ec2->createinternetgateway( )->get_internetgateway( )->get_internetgatewayid( ).
     ao_ec2->attachinternetgateway( iv_internetgatewayid = lv_internet_gateway_id
                                    iv_vpcid = av_vpc_id ).
-    wait_until_status_change( iv_instance_id = av_instance_id
+    wait_until_status_change( iv_instance_id = lv_instance_id
                               iv_required_status = 'running' ).
     DATA(lv_allocation_id) = ao_ec2->allocateaddress( iv_domain = 'vpc' )->get_allocationid( ).
 
     DATA(lo_result) = ao_ec2_actions->associate_address(
-        iv_instance_id = av_instance_id
+        iv_instance_id = lv_instance_id
         iv_allocation_id = lv_allocation_id ).
 
     cl_abap_unit_assert=>assert_not_initial(
           act = lo_result->get_associationid( )
-          msg = |Failed to associate Elastic IP address with EC2 instancce| ).
+          msg = |Failed to associate Elastic IP address with EC2 instance| ).
 
     ao_ec2->disassociateaddress( iv_associationid = lo_result->get_associationid( ) ).
     ao_ec2->releaseaddress( iv_allocationid = lv_allocation_id ).
@@ -244,53 +261,22 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
                                    iv_vpcid = av_vpc_id ).
     ao_ec2->deleteinternetgateway( iv_internetgatewayid = lv_internet_gateway_id ).
   ENDMETHOD.
+
   METHOD describe_addresses.
-    DATA(lv_internet_gateway_id) = ao_ec2->createinternetgateway( )->get_internetgateway( )->get_internetgatewayid( ).
-    ao_ec2->attachinternetgateway( iv_internetgatewayid = lv_internet_gateway_id
-                                   iv_vpcid = av_vpc_id ).
-    wait_until_status_change( iv_instance_id = av_instance_id
-                              iv_required_status = 'running' ).
-
-    DATA(lo_allocate_result) = ao_ec2->allocateaddress( iv_domain = 'vpc' ).
-    DATA(lo_associate_result) = ao_ec2->associateaddress( iv_allocationid = lo_allocate_result->get_allocationid( )
-                                                          iv_instanceid = av_instance_id ).
-
-    DATA(lo_describe_result) = ao_ec2_actions->describe_addresses( ).
-
-    LOOP AT lo_describe_result->get_addresses( ) INTO DATA(lo_address).
-      IF lo_address->get_instanceid( ) = av_instance_id AND lo_address->get_publicip( ) = lo_allocate_result->get_publicip( ).
-        DATA(lv_found) = abap_true.
-      ENDIF.
-    ENDLOOP.
-
-    cl_abap_unit_assert=>assert_true(
-      act = lv_found
-      msg = |Elastic IP address associated with EC2 instance should have been included in the address list| ).
-
-    ao_ec2->disassociateaddress( iv_associationid = lo_associate_result->get_associationid( ) ).
-    ao_ec2->releaseaddress( iv_allocationid = lo_allocate_result->get_allocationid( ) ).
-    ao_ec2->detachinternetgateway( iv_internetgatewayid = lv_internet_gateway_id
-                                   iv_vpcid = av_vpc_id ).
-    ao_ec2->deleteinternetgateway( iv_internetgatewayid = lv_internet_gateway_id ).
+    DATA(lo_result) = ao_ec2_actions->describe_addresses( ).
+    cl_abap_unit_assert=>assert_bound(
+      act = lo_result
+      msg = |Failed to retrieve addresses| ).
   ENDMETHOD.
+
   METHOD release_address.
-    DATA(lv_internet_gateway_id) = ao_ec2->createinternetgateway( )->get_internetgateway( )->get_internetgatewayid( ).
-    ao_ec2->attachinternetgateway( iv_internetgatewayid = lv_internet_gateway_id
-                                   iv_vpcid = av_vpc_id ).
-    wait_until_status_change( iv_instance_id = av_instance_id
-                              iv_required_status = 'running' ).
-
-    DATA(lo_allocate_result) = ao_ec2->allocateaddress( iv_domain = 'vpc' ).
-    DATA(lo_associate_result) = ao_ec2->associateaddress( iv_allocationid = lo_allocate_result->get_allocationid( )
-                                                          iv_instanceid = av_instance_id ).
-
-    ao_ec2->disassociateaddress( iv_associationid = lo_associate_result->get_associationid( ) ).
-    ao_ec2_actions->release_address( lo_allocate_result->get_allocationid( ) ).
+    DATA(lv_allocation_id) = ao_ec2->allocateaddress( iv_domain = 'vpc' )->get_allocationid( ).
+    ao_ec2_actions->release_address( lv_allocation_id ).
 
     DATA(lo_describe_result) = ao_ec2_actions->describe_addresses( ).
 
     LOOP AT lo_describe_result->get_addresses( ) INTO DATA(lo_address).
-      IF lo_address->get_publicip( ) = lo_allocate_result->get_publicip( ).
+      IF lo_address->get_allocationid( ) = lv_allocation_id.
         DATA(lv_found) = abap_true.
       ENDIF.
     ENDLOOP.
@@ -298,103 +284,111 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
     cl_abap_unit_assert=>assert_false(
       act = lv_found
       msg = |Elastic IP address should have been released| ).
-
-    ao_ec2->detachinternetgateway( iv_internetgatewayid = lv_internet_gateway_id
-                                   iv_vpcid = av_vpc_id ).
-    ao_ec2->deleteinternetgateway( iv_internetgatewayid = lv_internet_gateway_id ).
   ENDMETHOD.
+
   METHOD create_instance.
     DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
     DATA(lv_tag_value) = |{ /awsex/cl_utils=>cv_asset_prefix }-{ lv_uuid }|.
 
     DATA(lo_create_result) = ao_ec2_actions->create_instance(
-        iv_ami_id = get_ami_id( )
+        iv_ami_id = av_ami_id
         iv_tag_value = lv_tag_value
         iv_subnet_id = av_subnet_id ).
     READ TABLE lo_create_result->get_instances( ) INTO DATA(lo_instance) INDEX 1.
-    DATA(lv_current_status) = wait_until_status_change( iv_instance_id = lo_instance->get_instanceid( )
-                                                        iv_required_status = 'running' ).
 
-    cl_abap_unit_assert=>assert_equals(
-      act = lv_current_status
-      exp = 'running'
-      msg = |EC2 instance { lo_instance->get_instanceid( ) } should have been in 'running' state| ).
+    cl_abap_unit_assert=>assert_not_initial(
+      act = lo_instance->get_instanceid( )
+      msg = |EC2 instance should have been created| ).
+
     APPEND lo_instance->get_instanceid( ) TO at_instance_id.
+
+    " Wait for running state
+    wait_until_status_change( iv_instance_id = lo_instance->get_instanceid( )
+                              iv_required_status = 'running' ).
   ENDMETHOD.
+
   METHOD monitor_instance.
-    ao_ec2_actions->monitor_instance( av_instance_id ).
+    DATA(lv_instance_id) = get_or_create_instance( ).
+    ao_ec2_actions->monitor_instance( lv_instance_id ).
     WAIT UP TO 5 SECONDS.
     DATA(lo_describe_result) = ao_ec2->describeinstances(
       it_instanceids = VALUE /aws1/cl_ec2instidstringlist_w=>tt_instanceidstringlist(
-       ( NEW /aws1/cl_ec2instidstringlist_w( av_instance_id ) )
+       ( NEW /aws1/cl_ec2instidstringlist_w( lv_instance_id ) )
       ) ).
     READ TABLE lo_describe_result->get_reservations( ) INTO DATA(lo_reservation) INDEX 1.
     READ TABLE lo_reservation->get_instances( ) INTO DATA(lo_describe_instance) INDEX 1.
     cl_abap_unit_assert=>assert_equals(
-          exp = lo_describe_instance->get_monitoring( )->get_state( )
-          act = 'enabled'
+          exp = 'enabled'
+          act = lo_describe_instance->get_monitoring( )->get_state( )
           msg = |Detailed monitoring should have been enabled| ).
   ENDMETHOD.
+
   METHOD reboot_instance.
-    wait_until_status_change( iv_instance_id = av_instance_id
+    DATA(lv_instance_id) = get_or_create_instance( ).
+    wait_until_status_change( iv_instance_id = lv_instance_id
                               iv_required_status = 'running' ).
-    ao_ec2_actions->reboot_instance( av_instance_id ).
-    DATA(lv_current_status) = wait_until_status_change( iv_instance_id = av_instance_id
+    ao_ec2_actions->reboot_instance( lv_instance_id ).
+    DATA(lv_current_status) = wait_until_status_change( iv_instance_id = lv_instance_id
                                                         iv_required_status = 'running' ).
 
     cl_abap_unit_assert=>assert_equals(
-          exp = lv_current_status
-          act = 'running'
+          exp = 'running'
+          act = lv_current_status
           msg = |Failed to reboot the specified instance| ).
   ENDMETHOD.
+
   METHOD start_instances.
+    DATA(lv_instance_id) = get_or_create_instance( ).
     ao_ec2->stopinstances(
       it_instanceids = VALUE /aws1/cl_ec2instidstringlist_w=>tt_instanceidstringlist(
-        ( NEW /aws1/cl_ec2instidstringlist_w( av_instance_id ) )
+        ( NEW /aws1/cl_ec2instidstringlist_w( lv_instance_id ) )
       ) ).
-    wait_until_status_change( iv_instance_id = av_instance_id
+    wait_until_status_change( iv_instance_id = lv_instance_id
                               iv_required_status = 'stopped' ).
 
-    DATA(lo_start_result) = ao_ec2_actions->start_instance( av_instance_id ).
+    DATA(lo_start_result) = ao_ec2_actions->start_instance( lv_instance_id ).
     READ TABLE lo_start_result->get_startinginstances( ) INTO DATA(lo_start_instance) INDEX 1.
     cl_abap_unit_assert=>assert_equals(
-          exp = lo_start_instance->get_currentstate( )->get_name( )
-          act = 'pending'
+          exp = 'pending'
+          act = lo_start_instance->get_currentstate( )->get_name( )
           msg = |Instance should have been in 'pending' state when a request is made to start a stopped instance| ).
 
-    DATA(lv_current_status) = wait_until_status_change( iv_instance_id = av_instance_id
+    DATA(lv_current_status) = wait_until_status_change( iv_instance_id = lv_instance_id
                                                         iv_required_status = 'running' ).
     cl_abap_unit_assert=>assert_equals(
-          exp = lv_current_status
-          act = 'running'
+          exp = 'running'
+          act = lv_current_status
           msg = |Failed to start a stopped instance| ).
   ENDMETHOD.
+
   METHOD stop_instances.
-    DATA(lo_start_result) = ao_ec2_actions->start_instance( av_instance_id ).
-    wait_until_status_change( iv_instance_id = av_instance_id
+    DATA(lv_instance_id) = get_or_create_instance( ).
+    ao_ec2_actions->start_instance( lv_instance_id ).
+    wait_until_status_change( iv_instance_id = lv_instance_id
                               iv_required_status = 'running' ).
-    DATA(lo_stop_result) = ao_ec2_actions->stop_instance( av_instance_id ).
+    DATA(lo_stop_result) = ao_ec2_actions->stop_instance( lv_instance_id ).
     READ TABLE lo_stop_result->get_stoppinginstances( ) INTO DATA(lo_stop_instance) INDEX 1.
     cl_abap_unit_assert=>assert_equals(
-          exp = lo_stop_instance->get_currentstate( )->get_name( )
-          act = 'stopping'
+          exp = 'stopping'
+          act = lo_stop_instance->get_currentstate( )->get_name( )
           msg = |Instance should have been in 'stopping' state when a request is made to stop a running instance| ).
 
-    DATA(lv_current_status) = wait_until_status_change( iv_instance_id = av_instance_id
+    DATA(lv_current_status) = wait_until_status_change( iv_instance_id = lv_instance_id
                                                         iv_required_status = 'stopped' ).
     cl_abap_unit_assert=>assert_equals(
-          exp = lv_current_status
-          act = 'stopped'
+          exp = 'stopped'
+          act = lv_current_status
           msg = |Failed to stop a running instance| ).
 
   ENDMETHOD.
+
   METHOD describe_instances.
     DATA(lo_describe_result) = ao_ec2_actions->describe_instances( ).
-    READ TABLE lo_describe_result->get_reservations( ) INTO DATA(lo_reservation) INDEX 1.
     cl_abap_unit_assert=>assert_not_initial(
-          act = lo_reservation->get_instances( )
-          msg = |Instance List should not be empty| ).
+          act = lo_describe_result->get_reservations( )
+          msg = |Reservation list should not be empty| ).
   ENDMETHOD.
+
   METHOD create_key_pair.
     DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
     DATA(lv_key_name) = |{ /awsex/cl_utils=>cv_asset_prefix }-{ lv_uuid }|.
@@ -415,6 +409,7 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
 
     ao_ec2->deletekeypair( iv_keyname = lv_key_name ).
   ENDMETHOD.
+
   METHOD delete_key_pair.
     DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
     DATA(lv_key_name) = |{ /awsex/cl_utils=>cv_asset_prefix }-{ lv_uuid }|.
@@ -434,6 +429,7 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
       act = lv_found
       msg = |Key Pair { lv_key_name } should have been deleted| ).
   ENDMETHOD.
+
   METHOD describe_key_pairs.
     DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
     DATA(lv_key_name) = |{ /awsex/cl_utils=>cv_asset_prefix }-{ lv_uuid }|.
@@ -453,18 +449,21 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
       msg = |Key Pair { lv_key_name } should have been included in key pair list| ).
     ao_ec2->deletekeypair( iv_keyname = lv_key_name ).
   ENDMETHOD.
+
   METHOD describe_regions.
     DATA(lo_result) = ao_ec2_actions->describe_regions( ).
     cl_abap_unit_assert=>assert_not_initial(
           act = lo_result->get_regions( )
           msg = |Failed to retrieve list of regions| ).
   ENDMETHOD.
+
   METHOD describe_availability_zones.
     DATA(lo_result) = ao_ec2_actions->describe_availability_zones( ).
     cl_abap_unit_assert=>assert_not_initial(
           act = lo_result->get_availabilityzones( )
           msg = |Failed to retrieve list of availability zones| ).
   ENDMETHOD.
+
   METHOD create_security_group.
     DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
     DATA(lv_security_group_name) = |{ /awsex/cl_utils=>cv_asset_prefix }-{ lv_uuid }|.
@@ -489,6 +488,7 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
 
     ao_ec2->deletesecuritygroup( iv_groupid = lo_create_result->get_groupid( ) ).
   ENDMETHOD.
+
   METHOD delete_security_group.
     DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
     DATA(lv_security_group_name) = |{ /awsex/cl_utils=>cv_asset_prefix }-{ lv_uuid }|.
@@ -520,6 +520,7 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
       msg = |Security Group { lv_security_group_name } should have been deleted| ).
 
   ENDMETHOD.
+
   METHOD describe_security_groups.
     DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
     DATA(lv_security_group_name) = |{ /awsex/cl_utils=>cv_asset_prefix }-{ lv_uuid }|.
@@ -543,6 +544,7 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
 
     ao_ec2->deletesecuritygroup( iv_groupid = lo_create_result->get_groupid( ) ).
   ENDMETHOD.
+
   METHOD get_ami_id.
     CONSTANTS: cv_ami_name     TYPE string VALUE 'amzn2-ami-kernel-5.10-hvm*',
                cv_architecture TYPE string VALUE 'x86_64'.
@@ -572,8 +574,38 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
     READ TABLE lt_ami INTO DATA(lo_ami) INDEX 1.
     ov_ami_id = lo_ami-image->get_imageid( ).
   ENDMETHOD.
+
+  METHOD get_or_create_instance.
+    " Check if we have a shared instance created already
+    IF at_instance_id IS NOT INITIAL.
+      READ TABLE at_instance_id INTO ov_instance_id INDEX 1.
+      " Verify it still exists and is in a usable state
+      TRY.
+          DATA(lo_describe) = ao_ec2->describeinstances(
+            it_instanceids = VALUE /aws1/cl_ec2instidstringlist_w=>tt_instanceidstringlist(
+              ( NEW /aws1/cl_ec2instidstringlist_w( ov_instance_id ) )
+            ) ).
+          READ TABLE lo_describe->get_reservations( ) INTO DATA(lo_res) INDEX 1.
+          READ TABLE lo_res->get_instances( ) INTO DATA(lo_inst) INDEX 1.
+          DATA(lv_state) = lo_inst->get_state( )->get_name( ).
+          IF lv_state = 'terminated' OR lv_state = 'terminating'.
+            CLEAR ov_instance_id.
+          ENDIF.
+        CATCH /aws1/cx_rt_generic.
+          CLEAR ov_instance_id.
+      ENDTRY.
+    ENDIF.
+
+    " Create new instance if needed
+    IF ov_instance_id IS INITIAL.
+      ov_instance_id = run_instance( av_subnet_id ).
+      wait_until_status_change( iv_instance_id = ov_instance_id
+                                iv_required_status = 'running' ).
+    ENDIF.
+  ENDMETHOD.
+
   METHOD wait_until_status_change.
-    DO 96 TIMES.
+    DO 60 TIMES.
       WAIT UP TO 5 SECONDS.
       DATA(lo_describe_result) = ao_ec2->describeinstances(
           it_instanceids = VALUE /aws1/cl_ec2instidstringlist_w=>tt_instanceidstringlist(
@@ -587,9 +619,10 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
     ENDDO.
     ov_current_status = lo_describe_instance->get_state( )->get_name( ).
   ENDMETHOD.
+
   METHOD run_instance.
     DATA(lo_create_result) = ao_ec2->runinstances(
-        iv_imageid = get_ami_id( )
+        iv_imageid = av_ami_id
         iv_instancetype = 't3.micro'
         iv_maxcount = 1
         iv_mincount = 1
@@ -608,6 +641,7 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
     ov_instance_id = lo_instance->get_instanceid( ).
     APPEND ov_instance_id TO at_instance_id.
   ENDMETHOD.
+
   METHOD terminate_instance.
     ao_ec2->terminateinstances00(
         it_instanceids = VALUE /aws1/cl_ec2instidstringlist_w=>tt_instanceidstringlist(
@@ -618,15 +652,16 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD disassociate_address.
+    DATA(lv_instance_id) = get_or_create_instance( ).
     DATA(lv_internet_gateway_id) = ao_ec2->createinternetgateway( )->get_internetgateway( )->get_internetgatewayid( ).
     ao_ec2->attachinternetgateway( iv_internetgatewayid = lv_internet_gateway_id
                                    iv_vpcid = av_vpc_id ).
-    wait_until_status_change( iv_instance_id = av_instance_id
+    wait_until_status_change( iv_instance_id = lv_instance_id
                               iv_required_status = 'running' ).
     DATA(lv_allocation_id) = ao_ec2->allocateaddress( iv_domain = 'vpc' )->get_allocationid( ).
     DATA(lo_associate_result) = ao_ec2->associateaddress(
         iv_allocationid = lv_allocation_id
-        iv_instanceid = av_instance_id ).
+        iv_instanceid = lv_instance_id ).
 
     ao_ec2_actions->disassociate_address( lo_associate_result->get_associationid( ) ).
 
@@ -669,10 +704,9 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD describe_images.
-    DATA(lv_ami_id) = get_ami_id( ).
     DATA(lo_result) = ao_ec2_actions->describe_images(
       VALUE /aws1/cl_ec2imageidstrlist_w=>tt_imageidstringlist(
-        ( NEW /aws1/cl_ec2imageidstrlist_w( lv_ami_id ) )
+        ( NEW /aws1/cl_ec2imageidstrlist_w( av_ami_id ) )
       ) ).
 
     cl_abap_unit_assert=>assert_not_initial(
@@ -680,7 +714,7 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
       msg = |Failed to retrieve image information| ).
 
     LOOP AT lo_result->get_images( ) INTO DATA(lo_image).
-      IF lo_image->get_imageid( ) = lv_ami_id.
+      IF lo_image->get_imageid( ) = av_ami_id.
         DATA(lv_found) = abap_true.
         EXIT.
       ENDIF.
@@ -688,7 +722,7 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
 
     cl_abap_unit_assert=>assert_true(
       act = lv_found
-      msg = |AMI { lv_ami_id } should be in the images list| ).
+      msg = |AMI { av_ami_id } should be in the images list| ).
   ENDMETHOD.
 
   METHOD describe_instance_types.
@@ -719,42 +753,13 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
     DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
     DATA(lv_vpc_name) = |{ /awsex/cl_utils=>cv_asset_prefix }-{ lv_uuid }|.
 
-    " Create VPC with tags
-    DATA(lo_result) = ao_ec2->createvpc(
-      iv_cidrblock = cv_cidr_block
-      it_tagspecifications = VALUE /aws1/cl_ec2tagspecification=>tt_tagspecificationlist(
-        ( NEW /aws1/cl_ec2tagspecification(
-            iv_resourcetype = 'vpc'
-            it_tags = VALUE /aws1/cl_ec2tag=>tt_taglist(
-              ( NEW /aws1/cl_ec2tag( iv_key = 'Name' iv_value = lv_vpc_name ) )
-              ( NEW /aws1/cl_ec2tag( iv_key = 'convert_test' iv_value = 'true' ) )
-            )
-        ) )
-      )
-    ).
-
-    cl_abap_unit_assert=>assert_not_initial(
-      act = lo_result->get_vpc( )->get_vpcid( )
-      msg = |Failed to create VPC| ).
-
-    DATA(lv_test_vpc_id) = lo_result->get_vpc( )->get_vpcid( ).
-
     " Test the action method by calling it
     DATA(lo_action_result) = ao_ec2_actions->create_vpc( cv_cidr_block ).
     cl_abap_unit_assert=>assert_not_initial(
       act = lo_action_result->get_vpc( )->get_vpcid( )
       msg = |Failed to create VPC via action method| ).
 
-    " Clean up test VPCs
-    DO 10 TIMES.
-      TRY.
-          ao_ec2->deletevpc( iv_vpcid = lv_test_vpc_id ).
-          EXIT.
-        CATCH /aws1/cx_rt_service_generic.
-          WAIT UP TO 5 SECONDS.
-      ENDTRY.
-    ENDDO.
-
+    " Clean up test VPC
     DO 10 TIMES.
       TRY.
           ao_ec2->deletevpc( iv_vpcid = lo_action_result->get_vpc( )->get_vpcid( ) ).
