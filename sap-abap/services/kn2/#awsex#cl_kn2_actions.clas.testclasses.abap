@@ -680,13 +680,13 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
     lv_timeout_str = iv_max_wait_sec.
     CONDENSE lv_timeout_str.
     
-    CONCATENATE 'Timeout: Application' iv_application_name 'status' lv_current_status
+    CONCATENATE 'Timeout: Application' iv_application_name 'status' lv_current_status 'expected' iv_target_status
       INTO lv_fail_msg SEPARATED BY space.
     
     MESSAGE lv_fail_msg TYPE 'I'.
     
     " Raise a generic exception for test framework to catch
-    RAISE EXCEPTION TYPE cx_sy_dyn_call_error.
+    RAISE EXCEPTION TYPE /aws1/cx_rt_generic.
 
   ENDMETHOD.
 
