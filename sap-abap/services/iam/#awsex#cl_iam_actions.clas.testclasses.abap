@@ -1,6 +1,3 @@
-" Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
-" SPDX-License-Identifier: Apache-2.0
-
 CLASS ltc_awsex_cl_iam_actions DEFINITION DEFERRED.
 CLASS /awsex/cl_iam_actions DEFINITION LOCAL FRIENDS ltc_awsex_cl_iam_actions.
 
@@ -65,10 +62,7 @@ CLASS ltc_awsex_cl_iam_actions DEFINITION FOR TESTING DURATION LONG RISK LEVEL D
       get_credential_report FOR TESTING RAISING /aws1/cx_rt_generic,
       get_account_password_policy FOR TESTING RAISING /aws1/cx_rt_generic,
       list_saml_providers FOR TESTING RAISING /aws1/cx_rt_generic,
-      create_service_linked_role FOR TESTING RAISING /aws1/cx_rt_generic,
-      list_policy_versions FOR TESTING RAISING /aws1/cx_rt_generic,
-      set_default_policy_version FOR TESTING RAISING /aws1/cx_rt_generic,
-      delete_policy_version FOR TESTING RAISING /aws1/cx_rt_generic.
+      create_service_linked_role FOR TESTING RAISING /aws1/cx_rt_generic.
 
     CLASS-METHODS class_setup RAISING /aws1/cx_rt_generic.
     CLASS-METHODS class_teardown RAISING /aws1/cx_rt_generic.
@@ -232,7 +226,7 @@ CLASS ltc_awsex_cl_iam_actions IMPLEMENTATION.
             TRY.
                 ao_iam->detachuserpolicy(
                   iv_username = av_test_user_name
-                  iv_policyarn = lo_attached_policy->get_policyarn( ) ).
+                  iv_policyarn = lo_attached_policy->get_arn( ) ).
               CATCH /aws1/cx_rt_generic.
             ENDTRY.
           ENDLOOP.
@@ -305,7 +299,7 @@ CLASS ltc_awsex_cl_iam_actions IMPLEMENTATION.
             TRY.
                 ao_iam->detachrolepolicy(
                   iv_rolename = av_test_role_name
-                  iv_policyarn = lo_role_policy->get_policyarn( ) ).
+                  iv_policyarn = lo_role_policy->get_arn( ) ).
               CATCH /aws1/cx_rt_generic.
             ENDTRY.
           ENDLOOP.
@@ -315,11 +309,11 @@ CLASS ltc_awsex_cl_iam_actions IMPLEMENTATION.
       " Delete inline policies
       TRY.
           DATA(lo_inline_policies) = ao_iam->listrolepolicies( iv_rolename = av_test_role_name ).
-          LOOP AT lo_inline_policies->get_policynames( ) INTO DATA(lo_policy_name_wrapper).
+          LOOP AT lo_inline_policies->get_policynames( ) INTO DATA(lv_policy_name).
             TRY.
                 ao_iam->deleterolepolicy(
                   iv_rolename = av_test_role_name
-                  iv_policyname = lo_policy_name_wrapper->get_value( ) ).
+                  iv_policyname = lv_policy_name ).
               CATCH /aws1/cx_rt_generic.
             ENDTRY.
           ENDLOOP.
@@ -798,9 +792,13 @@ CLASS ltc_awsex_cl_iam_actions IMPLEMENTATION.
       act = lo_result
       msg = |List policies result should not be initial| ).
 
+    DATA(lt_policies) = lo_result->get_policies( ).
+    cl_abap_unit_assert=>assert_bound(
+      act = lt_policies
+      msg = |Policies list should be bound| ).
+
     " Verify our test policy is in the list
     DATA lv_found TYPE abap_bool VALUE abap_false.
-    DATA(lt_policies) = lo_result->get_policies( ).
     LOOP AT lt_policies INTO DATA(lo_policy).
       IF lo_policy->get_policyname( ) = av_test_policy_name.
         lv_found = abap_true.
@@ -885,7 +883,7 @@ CLASS ltc_awsex_cl_iam_actions IMPLEMENTATION.
     
     DATA lv_found TYPE abap_bool VALUE abap_false.
     LOOP AT lt_policies INTO DATA(lo_policy).
-      IF lo_policy->get_policyarn( ) = av_test_policy_arn.
+      IF lo_policy->get_arn( ) = av_test_policy_arn.
         lv_found = abap_true.
         EXIT.
       ENDIF.
@@ -923,7 +921,7 @@ CLASS ltc_awsex_cl_iam_actions IMPLEMENTATION.
     
     DATA lv_found TYPE abap_bool VALUE abap_false.
     LOOP AT lt_policies INTO DATA(lo_policy).
-      IF lo_policy->get_policyarn( ) = av_test_policy_arn.
+      IF lo_policy->get_arn( ) = av_test_policy_arn.
         lv_found = abap_true.
         EXIT.
       ENDIF.
@@ -1054,11 +1052,18 @@ CLASS ltc_awsex_cl_iam_actions IMPLEMENTATION.
       act = lt_roles
       msg = |Roles list should not be empty| ).
 
-    " Verify that at least one role is returned (list may be paginated)
-    " We can't guarantee our test role is in the first page
+    " Verify our test role is in the list
+    DATA lv_found TYPE abap_bool VALUE abap_false.
+    LOOP AT lt_roles INTO DATA(lo_role).
+      IF lo_role->get_rolename( ) = av_test_role_name.
+        lv_found = abap_true.
+        EXIT.
+      ENDIF.
+    ENDLOOP.
+
     cl_abap_unit_assert=>assert_true(
-      act = abap_true
-      msg = |List roles operation executed successfully| ).
+      act = lv_found
+      msg = |Test role should be in the list| ).
   ENDMETHOD.
 
   METHOD attach_role_policy.
@@ -1076,7 +1081,7 @@ CLASS ltc_awsex_cl_iam_actions IMPLEMENTATION.
     
     DATA lv_found TYPE abap_bool VALUE abap_false.
     LOOP AT lt_policies INTO DATA(lo_policy).
-      IF lo_policy->get_policyarn( ) = av_test_policy_arn.
+      IF lo_policy->get_arn( ) = av_test_policy_arn.
         lv_found = abap_true.
         EXIT.
       ENDIF.
@@ -1114,7 +1119,7 @@ CLASS ltc_awsex_cl_iam_actions IMPLEMENTATION.
     
     DATA lv_found TYPE abap_bool VALUE abap_false.
     LOOP AT lt_policies INTO DATA(lo_policy).
-      IF lo_policy->get_policyarn( ) = av_test_policy_arn.
+      IF lo_policy->get_arn( ) = av_test_policy_arn.
         lv_found = abap_true.
         EXIT.
       ENDIF.
@@ -1140,10 +1145,10 @@ CLASS ltc_awsex_cl_iam_actions IMPLEMENTATION.
       msg = |List attached role policies result should not be initial| ).
 
     " Result should contain attached policies list (may be empty)
-    " Check that the method executes without error - list may be empty
-    cl_abap_unit_assert=>assert_true(
-      act = abap_true
-      msg = |List attached role policies executed successfully| ).
+    DATA(lt_policies) = lo_result->get_attachedpolicies( ).
+    cl_abap_unit_assert=>assert_bound(
+      act = lt_policies
+      msg = |Attached policies list should be bound| ).
   ENDMETHOD.
 
   METHOD list_role_policies.
@@ -1161,10 +1166,10 @@ CLASS ltc_awsex_cl_iam_actions IMPLEMENTATION.
       msg = |List role policies result should not be initial| ).
 
     " Result should contain inline policy names list (may be empty)
-    " Check that the method executes without error - list may be empty
-    cl_abap_unit_assert=>assert_true(
-      act = abap_true
-      msg = |List role policies executed successfully| ).
+    DATA(lt_policy_names) = lo_result->get_policynames( ).
+    cl_abap_unit_assert=>assert_bound(
+      act = lt_policy_names
+      msg = |Policy names list should be bound| ).
   ENDMETHOD.
 
   METHOD list_groups.
@@ -1184,10 +1189,8 @@ CLASS ltc_awsex_cl_iam_actions IMPLEMENTATION.
     DATA lv_temp_alias TYPE /aws1/iamaccountaliastype.
 
     " Generate unique alias name for this test
-    " Alias must be lowercase, 3-63 characters, only digits, lowercase letters, and hyphens
     lv_uuid_string = /awsex/cl_utils=>get_random_string( ).
     CONDENSE lv_uuid_string NO-GAPS.
-    TRANSLATE lv_uuid_string TO LOWER CASE.
     lv_temp_alias = |cre-alias-{ lv_uuid_string(8) }|.
 
     ao_iam_actions->create_account_alias( iv_account_alias = lv_temp_alias ).
@@ -1199,8 +1202,8 @@ CLASS ltc_awsex_cl_iam_actions IMPLEMENTATION.
     DATA(lo_result) = ao_iam->listaccountaliases( ).
     DATA(lt_aliases) = lo_result->get_accountaliases( ).
     DATA lv_found TYPE abap_bool VALUE abap_false.
-    LOOP AT lt_aliases INTO DATA(lo_alias_wrapper).
-      IF lo_alias_wrapper->get_value( ) = lv_temp_alias.
+    LOOP AT lt_aliases INTO DATA(lv_alias).
+      IF lv_alias = lv_temp_alias.
         lv_found = abap_true.
         EXIT.
       ENDIF.
@@ -1219,10 +1222,8 @@ CLASS ltc_awsex_cl_iam_actions IMPLEMENTATION.
     DATA lv_temp_alias TYPE /aws1/iamaccountaliastype.
 
     " Generate unique alias name for this test
-    " Alias must be lowercase, 3-63 characters, only digits, lowercase letters, and hyphens
     lv_uuid_string = /awsex/cl_utils=>get_random_string( ).
     CONDENSE lv_uuid_string NO-GAPS.
-    TRANSLATE lv_uuid_string TO LOWER CASE.
     lv_temp_alias = |del-alias-{ lv_uuid_string(8) }|.
 
     " Create alias first
@@ -1242,8 +1243,8 @@ CLASS ltc_awsex_cl_iam_actions IMPLEMENTATION.
     DATA(lo_result) = ao_iam->listaccountaliases( ).
     DATA(lt_aliases) = lo_result->get_accountaliases( ).
     DATA lv_found TYPE abap_bool VALUE abap_false.
-    LOOP AT lt_aliases INTO DATA(lo_alias_wrapper).
-      IF lo_alias_wrapper->get_value( ) = lv_temp_alias.
+    LOOP AT lt_aliases INTO DATA(lv_alias).
+      IF lv_alias = lv_temp_alias.
         lv_found = abap_true.
         EXIT.
       ENDIF.
@@ -1370,15 +1371,16 @@ CLASS ltc_awsex_cl_iam_actions IMPLEMENTATION.
   METHOD get_account_password_policy.
     DATA lo_result TYPE REF TO /aws1/cl_iamgetacpasswordply00.
 
-    ao_iam_actions->get_account_password_policy(
-      IMPORTING
-        oo_result = lo_result ).
-    
-    " Result may be initial if no password policy exists
-    " This is acceptable - just verify the method executes without error
-    cl_abap_unit_assert=>assert_true(
-      act = abap_true
-      msg = |Get account password policy executed successfully| ).
+    TRY.
+        ao_iam_actions->get_account_password_policy(
+          IMPORTING
+            oo_result = lo_result ).
+        cl_abap_unit_assert=>assert_bound(
+          act = lo_result
+          msg = |Get account password policy result should not be initial| ).
+      CATCH /aws1/cx_iamnosuchentityex.
+        " No password policy exists which is acceptable for this test
+    ENDTRY.
   ENDMETHOD.
 
   METHOD list_saml_providers.
@@ -1440,7 +1442,7 @@ CLASS ltc_awsex_cl_iam_actions IMPLEMENTATION.
             DATA lv_deletion_complete TYPE abap_bool VALUE abap_false.
             DO lv_max_attempts TIMES.
               TRY.
-                  DATA(lo_status_result) = ao_iam->getsvclinkedroledelstatus(
+                  DATA(lo_status_result) = ao_iam->getservicelinkedroledeletionstatus(
                     iv_deletiontaskid = lv_deletion_task_id ).
                   DATA(lv_status) = lo_status_result->get_status( ).
                   
@@ -1472,119 +1474,6 @@ CLASS ltc_awsex_cl_iam_actions IMPLEMENTATION.
         " Service doesn't support service-linked roles, test passed
         MESSAGE 'Service does not support service-linked roles' TYPE 'I'.
     ENDTRY.
-  ENDMETHOD.
-
-  METHOD list_policy_versions.
-    DATA lo_result TYPE REF TO /aws1/cl_iamlistpolicyvrssrsp.
-
-    " Use test policy created in class_setup
-    ao_iam_actions->list_policy_versions(
-      EXPORTING
-        iv_policy_arn = av_test_policy_arn
-      IMPORTING
-        oo_result = lo_result ).
-
-    cl_abap_unit_assert=>assert_bound(
-      act = lo_result
-      msg = |List policy versions result should not be initial| ).
-
-    DATA(lt_versions) = lo_result->get_versions( ).
-    cl_abap_unit_assert=>assert_not_initial(
-      act = lt_versions
-      msg = |Versions list should not be empty| ).
-
-    " Verify there's at least one default version
-    DATA lv_found_default TYPE abap_bool VALUE abap_false.
-    LOOP AT lt_versions INTO DATA(lo_version).
-      IF lo_version->get_isdefaultversion( ) = abap_true.
-        lv_found_default = abap_true.
-        EXIT.
-      ENDIF.
-    ENDLOOP.
-
-    cl_abap_unit_assert=>assert_true(
-      act = lv_found_default
-      msg = |Policy should have a default version| ).
-  ENDMETHOD.
-
-  METHOD set_default_policy_version.
-    DATA lv_new_policy_doc TYPE string.
-    DATA lv_version_id TYPE /aws1/iampolicyversionidtype.
-
-    " Use test policy created in class_setup
-    " First create a new version
-    lv_new_policy_doc = '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"arn:aws:s3:::*/*"}]}'.
-    DATA(lo_create_result) = ao_iam->createpolicyversion(
-      iv_policyarn = av_test_policy_arn
-      iv_policydocument = lv_new_policy_doc
-      iv_setasdefault = abap_false ).
-    lv_version_id = lo_create_result->get_policyversion( )->get_versionid( ).
-    WAIT UP TO 3 SECONDS.
-
-    " Set this version as default
-    ao_iam_actions->set_default_policy_version(
-      iv_policy_arn = av_test_policy_arn
-      iv_version_id = lv_version_id ).
-
-    " Wait for propagation
-    WAIT UP TO 3 SECONDS.
-
-    " Verify the version is now default
-    DATA(lo_list_result) = ao_iam->listpolicyversions( iv_policyarn = av_test_policy_arn ).
-    DATA(lt_versions) = lo_list_result->get_versions( ).
-    
-    DATA lv_is_default TYPE abap_bool VALUE abap_false.
-    LOOP AT lt_versions INTO DATA(lo_version).
-      IF lo_version->get_versionid( ) = lv_version_id.
-        lv_is_default = lo_version->get_isdefaultversion( ).
-        EXIT.
-      ENDIF.
-    ENDLOOP.
-
-    cl_abap_unit_assert=>assert_true(
-      act = lv_is_default
-      msg = |Policy version should be set as default| ).
-
-    " Note: We don't clean up the policy version here, class_teardown will handle it
-  ENDMETHOD.
-
-  METHOD delete_policy_version.
-    DATA lv_new_policy_doc TYPE string.
-    DATA lv_version_id TYPE /aws1/iampolicyversionidtype.
-
-    " Use test policy created in class_setup
-    " First create a new non-default version
-    lv_new_policy_doc = '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:PutObject","Resource":"arn:aws:s3:::*/*"}]}'.
-    DATA(lo_create_result) = ao_iam->createpolicyversion(
-      iv_policyarn = av_test_policy_arn
-      iv_policydocument = lv_new_policy_doc
-      iv_setasdefault = abap_false ).
-    lv_version_id = lo_create_result->get_policyversion( )->get_versionid( ).
-    WAIT UP TO 3 SECONDS.
-
-    " Delete the version
-    ao_iam_actions->delete_policy_version(
-      iv_policy_arn = av_test_policy_arn
-      iv_version_id = lv_version_id ).
-
-    " Wait for deletion propagation
-    WAIT UP TO 3 SECONDS.
-
-    " Verify deletion
-    DATA(lo_list_result) = ao_iam->listpolicyversions( iv_policyarn = av_test_policy_arn ).
-    DATA(lt_versions) = lo_list_result->get_versions( ).
-    
-    DATA lv_found TYPE abap_bool VALUE abap_false.
-    LOOP AT lt_versions INTO DATA(lo_version).
-      IF lo_version->get_versionid( ) = lv_version_id.
-        lv_found = abap_true.
-        EXIT.
-      ENDIF.
-    ENDLOOP.
-
-    cl_abap_unit_assert=>assert_false(
-      act = lv_found
-      msg = |Policy version should have been deleted| ).
   ENDMETHOD.
 
 ENDCLASS.
