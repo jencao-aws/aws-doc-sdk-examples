@@ -25,7 +25,6 @@ CLASS ltc_awsex_cl_kn2_actions DEFINITION FOR TESTING DURATION LONG RISK LEVEL D
     CLASS-DATA av_input_id TYPE /aws1/kn2id.
     CLASS-DATA av_create_timestamp TYPE /aws1/kn2timestamp.
     CLASS-DATA av_snapshot_name TYPE /aws1/kn2snapshotname.
-    CLASS-DATA av_policy_arn TYPE /aws1/iamarntype.
 
     METHODS create_application FOR TESTING RAISING /aws1/cx_rt_generic.
     METHODS describe_application FOR TESTING RAISING /aws1/cx_rt_generic.
@@ -103,11 +102,10 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
         iv_policydocument = lv_policy_doc
         it_tags = VALUE /aws1/cl_iamtag=>tt_taglisttype(
             ( NEW /aws1/cl_iamtag( iv_key = 'convert_test' iv_value = 'true' ) ) ) ).
-    av_policy_arn = lo_policy_result->get_policy( )->get_arn( ).
 
     ao_iam->attachrolepolicy(
         iv_rolename = av_role_name
-        iv_policyarn = av_policy_arn ).
+        iv_policyarn = lo_policy_result->get_policy( )->get_arn( ) ).
 
     " Create input and output Kinesis streams
     ao_kns->createstream(
@@ -115,20 +113,28 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
         iv_shardcount = 1 ).
 
     " Tag input stream
+    DATA lt_input_tags TYPE /aws1/cl_knstagmap_w=>tt_tagmap.
+    DATA ls_input_tag TYPE /aws1/cl_knstagmap_w=>ts_tagmap_maprow.
+    ls_input_tag-key = 'convert_test'.
+    ls_input_tag-value = NEW /aws1/cl_knstagmap_w( iv_value = 'true' ).
+    INSERT ls_input_tag INTO TABLE lt_input_tags.
     ao_kns->addtagstostream(
         iv_streamname = av_input_stream_name
-        it_tags = VALUE /aws1/cl_knstag=>tt_taglist(
-            ( NEW /aws1/cl_knstag( iv_key = 'convert_test' iv_value = 'true' ) ) ) ).
+        it_tags = lt_input_tags ).
 
     ao_kns->createstream(
         iv_streamname = av_output_stream_name
         iv_shardcount = 1 ).
 
     " Tag output stream
+    DATA lt_output_tags TYPE /aws1/cl_knstagmap_w=>tt_tagmap.
+    DATA ls_output_tag TYPE /aws1/cl_knstagmap_w=>ts_tagmap_maprow.
+    ls_output_tag-key = 'convert_test'.
+    ls_output_tag-value = NEW /aws1/cl_knstagmap_w( iv_value = 'true' ).
+    INSERT ls_output_tag INTO TABLE lt_output_tags.
     ao_kns->addtagstostream(
         iv_streamname = av_output_stream_name
-        it_tags = VALUE /aws1/cl_knstag=>tt_taglist(
-            ( NEW /aws1/cl_knstag( iv_key = 'convert_test' iv_value = 'true' ) ) ) ).
+        it_tags = lt_output_tags ).
 
     " Wait for streams to become active
     DATA lv_stream_status TYPE /aws1/knsstreamstatus.
@@ -228,10 +234,17 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
     " Detach and delete IAM policy and role
     IF av_role_name IS NOT INITIAL.
       TRY.
-          ao_iam->detachrolepolicy(
-              iv_rolename = av_role_name
-              iv_policyarn = av_policy_arn ).
-          ao_iam->deletepolicy( iv_policyarn = av_policy_arn ).
+          DATA(lo_attached_policies) = ao_iam->listattachedrolepolicies( iv_rolename = av_role_name ).
+          LOOP AT lo_attached_policies->get_attachedpolicies( ) INTO DATA(lo_policy).
+            DATA(lv_policy_arn) = lo_policy->get_policyarn( ).
+            ao_iam->detachrolepolicy(
+                iv_rolename = av_role_name
+                iv_policyarn = lv_policy_arn ).
+            " Delete the policy if it's one we created
+            IF lv_policy_arn CS 'sap-abap-kn2-policy'.
+              ao_iam->deletepolicy( iv_policyarn = lv_policy_arn ).
+            ENDIF.
+          ENDLOOP.
           ao_iam->deleterole( iv_rolename = av_role_name ).
         CATCH /aws1/cx_iamnosuchentityex.
       ENDTRY.
@@ -286,8 +299,11 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
   METHOD discover_input_schema.
     " Put some test data into the input stream
     DATA lt_records TYPE /aws1/cl_knsputrecsreqentry=>tt_putrecordsrequestentrylist.
-    DATA(lv_test_data) = '{"price": 50.00, "ticker": "AAPL"}'.
-    DATA(lv_xstring_data) = /aws1/cl_rt_util=>string_to_xstring( lv_test_data ).
+    DATA(lv_xstring_data) = /aws1/cl_rt_util=>string_to_xstring(
+      `{` &&
+        `"price": 50.00,` &&
+        `"ticker": "AAPL"` &&
+      `}` ).
 
     APPEND NEW /aws1/cl_knsputrecsreqentry(
         iv_data = lv_xstring_data
@@ -316,8 +332,11 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
   METHOD add_input.
     " First discover the schema
     DATA lt_records TYPE /aws1/cl_knsputrecsreqentry=>tt_putrecordsrequestentrylist.
-    DATA(lv_test_data) = '{"price": 50.00, "ticker": "AAPL"}'.
-    DATA(lv_xstring_data) = /aws1/cl_rt_util=>string_to_xstring( lv_test_data ).
+    DATA(lv_xstring_data) = /aws1/cl_rt_util=>string_to_xstring(
+      `{` &&
+        `"price": 50.00,` &&
+        `"ticker": "AAPL"` &&
+      `}` ).
 
     APPEND NEW /aws1/cl_knsputrecsreqentry(
         iv_data = lv_xstring_data
