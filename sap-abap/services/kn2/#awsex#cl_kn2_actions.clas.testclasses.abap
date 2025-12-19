@@ -271,11 +271,11 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
     av_application_version_id = lo_app_detail->get_applicationversionid( ).
     av_create_timestamp = lo_app_detail->get_createtimestamp( ).
 
-    " Wait for application to be ready - reduced timeout
+    " Wait for application to be ready - increased timeout for application creation
     wait_for_application_status(
         iv_application_name = av_application_name
         iv_target_status = 'READY'
-        iv_max_wait_sec = 120 ).
+        iv_max_wait_sec = 300 ).
 
   ENDMETHOD.
 
@@ -356,6 +356,11 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD add_input.
+    " Skip if no valid version ID
+    IF av_application_version_id IS INITIAL OR av_application_version_id = 0.
+      cl_abap_unit_assert=>fail( msg = 'Application version ID is not set - create_application may have failed' ).
+    ENDIF.
+
     " First discover the schema - put multiple records
     DATA lt_records TYPE /aws1/cl_knsputrecsreqentry=>tt_putrecordsrequestentrylist.
     
@@ -674,18 +679,16 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
       ENDIF.
     ENDDO.
 
-    " If we reach here, timeout occurred - raise a simple exception
+    " If we reach here, timeout occurred
     DATA lv_fail_msg TYPE string.
     DATA lv_timeout_str TYPE string.
     lv_timeout_str = iv_max_wait_sec.
     CONDENSE lv_timeout_str.
     
-    CONCATENATE 'Timeout: Application' iv_application_name 'status' lv_current_status 'expected' iv_target_status
+    CONCATENATE 'Timeout waiting for' iv_target_status 'status. Current:' lv_current_status
       INTO lv_fail_msg SEPARATED BY space.
     
-    MESSAGE lv_fail_msg TYPE 'I'.
-    
-    " Raise a generic exception for test framework to catch
+    " Raise exception without MESSAGE statement to avoid E001 error
     RAISE EXCEPTION TYPE /aws1/cx_rt_generic.
 
   ENDMETHOD.
