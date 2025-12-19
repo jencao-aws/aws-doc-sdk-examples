@@ -338,7 +338,7 @@ CLASS /AWSEX/CL_KN2_ACTIONS IMPLEMENTATION.
             iv_codecontenttypeupdate = 'PLAINTEXT'
             io_codecontentupdate = lo_code_content_update ).
         DATA(lo_application_conf_update) = NEW /aws1/cl_kn2applicationconfupd(
-            io_applicationcodeconfigurationupdate = lo_app_code_config_update ).
+            io_applicationcodeconfupdate = lo_app_code_config_update ).
         oo_result = lo_kn2->updateapplication(
             iv_applicationname = iv_application_name
             iv_currentapplicationvrsid = iv_current_application_vrs_id
@@ -371,13 +371,13 @@ CLASS /AWSEX/CL_KN2_ACTIONS IMPLEMENTATION.
     TRY.
         " iv_application_name = 'MyKinesisAnalyticsApp'
         " iv_input_id = '1.1'
-        DATA(lo_sql_run_conf) = NEW /aws1/cl_kn2sqlrunconf(
-            iv_inputid = iv_input_id ).
-        DATA lt_sql_run_confs TYPE /aws1/cl_kn2sqlrunconf=>tt_sqlrunconfigurations.
-        APPEND lo_sql_run_conf TO lt_sql_run_confs.
         DATA(lo_input_start_pos_conf) = NEW /aws1/cl_kn2inpstrtingpositi00(
             iv_inputstartingposition = 'NOW' ).
-        lo_sql_run_conf->set_inputstartingpositionconf( lo_input_start_pos_conf ).
+        DATA(lo_sql_run_conf) = NEW /aws1/cl_kn2sqlrunconf(
+            iv_inputid = iv_input_id
+            io_inputstartingpositionconf = lo_input_start_pos_conf ).
+        DATA lt_sql_run_confs TYPE /aws1/cl_kn2sqlrunconf=>tt_sqlrunconfigurations.
+        APPEND lo_sql_run_conf TO lt_sql_run_confs.
         DATA(lo_run_conf) = NEW /aws1/cl_kn2runconfiguration(
             it_sqlrunconfigurations = lt_sql_run_confs ).
         lo_kn2->startapplication(
