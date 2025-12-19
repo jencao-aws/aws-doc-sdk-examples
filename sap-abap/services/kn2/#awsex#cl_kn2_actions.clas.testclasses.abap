@@ -16,7 +16,7 @@ CLASS ltc_awsex_cl_kn2_actions DEFINITION FOR TESTING DURATION LONG RISK LEVEL D
 
     CLASS-DATA av_application_name TYPE /aws1/kn2applicationname.
     CLASS-DATA av_role_arn TYPE /aws1/kn2rolearn.
-    CLASS-DATA av_role_name TYPE /aws1/iamrolename.
+    CLASS-DATA av_role_name TYPE /aws1/iamrolenametype.
     CLASS-DATA av_input_stream_name TYPE /aws1/knsstreamname.
     CLASS-DATA av_output_stream_name TYPE /aws1/knsstreamname.
     CLASS-DATA av_input_stream_arn TYPE /aws1/kn2resourcearn.
