@@ -632,8 +632,8 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
 
     " Verify the disassociation
     DATA(lo_describe_result) = ao_ec2->describeaddresses(
-      it_allocationids = VALUE /aws1/cl_ec2allocationidlst_w=>tt_allocationidlist(
-        ( NEW /aws1/cl_ec2allocationidlst_w( lv_allocation_id ) )
+      it_allocationids = VALUE /aws1/cl_ec2allocationidlist_w=>tt_allocationidlist(
+        ( NEW /aws1/cl_ec2allocationidlist_w( lv_allocation_id ) )
       ) ).
     READ TABLE lo_describe_result->get_addresses( ) INTO DATA(lo_address) INDEX 1.
 
