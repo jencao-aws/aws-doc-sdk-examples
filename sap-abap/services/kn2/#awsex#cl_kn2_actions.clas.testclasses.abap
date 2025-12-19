@@ -25,6 +25,7 @@ CLASS ltc_awsex_cl_kn2_actions DEFINITION FOR TESTING DURATION LONG RISK LEVEL D
     CLASS-DATA av_input_id TYPE /aws1/kn2id.
     CLASS-DATA av_create_timestamp TYPE /aws1/kn2timestamp.
     CLASS-DATA av_snapshot_name TYPE /aws1/kn2snapshotname.
+    CLASS-DATA av_policy_arn TYPE /aws1/iamarntype.
 
     METHODS create_application FOR TESTING RAISING /aws1/cx_rt_generic.
     METHODS describe_application FOR TESTING RAISING /aws1/cx_rt_generic.
@@ -102,10 +103,11 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
         iv_policydocument = lv_policy_doc
         it_tags = VALUE /aws1/cl_iamtag=>tt_taglisttype(
             ( NEW /aws1/cl_iamtag( iv_key = 'convert_test' iv_value = 'true' ) ) ) ).
+    av_policy_arn = lo_policy_result->get_policy( )->get_arn( ).
 
     ao_iam->attachrolepolicy(
         iv_rolename = av_role_name
-        iv_policyarn = lo_policy_result->get_policy( )->get_arn( ) ).
+        iv_policyarn = av_policy_arn ).
 
     " Create input and output Kinesis streams
     ao_kns->createstream(
@@ -115,7 +117,7 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
     " Tag input stream
     ao_kns->addtagstostream(
         iv_streamname = av_input_stream_name
-        it_tags = VALUE /aws1/cl_knstag=>tt_tagmap(
+        it_tags = VALUE /aws1/cl_knstag=>tt_taglist(
             ( NEW /aws1/cl_knstag( iv_key = 'convert_test' iv_value = 'true' ) ) ) ).
 
     ao_kns->createstream(
@@ -125,7 +127,7 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
     " Tag output stream
     ao_kns->addtagstostream(
         iv_streamname = av_output_stream_name
-        it_tags = VALUE /aws1/cl_knstag=>tt_tagmap(
+        it_tags = VALUE /aws1/cl_knstag=>tt_taglist(
             ( NEW /aws1/cl_knstag( iv_key = 'convert_test' iv_value = 'true' ) ) ) ).
 
     " Wait for streams to become active
@@ -226,16 +228,10 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
     " Detach and delete IAM policy and role
     IF av_role_name IS NOT INITIAL.
       TRY.
-          DATA(lo_attached_policies) = ao_iam->listattachedrolepolicies( iv_rolename = av_role_name ).
-          LOOP AT lo_attached_policies->get_attachedpolicies( ) INTO DATA(lo_policy).
-            ao_iam->detachrolepolicy(
-                iv_rolename = av_role_name
-                iv_policyarn = lo_policy->get_arn( ) ).
-            " Delete the policy if it's one we created
-            IF lo_policy->get_arn( ) CS 'sap-abap-kn2-policy'.
-              ao_iam->deletepolicy( iv_policyarn = lo_policy->get_arn( ) ).
-            ENDIF.
-          ENDLOOP.
+          ao_iam->detachrolepolicy(
+              iv_rolename = av_role_name
+              iv_policyarn = av_policy_arn ).
+          ao_iam->deletepolicy( iv_policyarn = av_policy_arn ).
           ao_iam->deleterole( iv_rolename = av_role_name ).
         CATCH /aws1/cx_iamnosuchentityex.
       ENDTRY.
@@ -251,13 +247,13 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
 
     cl_abap_unit_assert=>assert_bound(
         act = lo_result
-        msg = |Create application did not return a result| ).
+        msg = 'Create application did not return a result' ).
 
     DATA(lo_app_detail) = lo_result->get_applicationdetail( ).
     cl_abap_unit_assert=>assert_equals(
         exp = av_application_name
         act = lo_app_detail->get_applicationname( )
-        msg = |Application name does not match| ).
+        msg = 'Application name does not match' ).
 
     av_application_version_id = lo_app_detail->get_applicationversionid( ).
     av_create_timestamp = lo_app_detail->get_createtimestamp( ).
@@ -274,13 +270,13 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
 
     cl_abap_unit_assert=>assert_bound(
         act = lo_result
-        msg = |Describe application did not return a result| ).
+        msg = 'Describe application did not return a result' ).
 
     DATA(lo_app_detail) = lo_result->get_applicationdetail( ).
     cl_abap_unit_assert=>assert_equals(
         exp = av_application_name
         act = lo_app_detail->get_applicationname( )
-        msg = |Application name does not match| ).
+        msg = 'Application name does not match' ).
 
     " Update version ID in case it changed
     av_application_version_id = lo_app_detail->get_applicationversionid( ).
@@ -290,7 +286,7 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
   METHOD discover_input_schema.
     " Put some test data into the input stream
     DATA lt_records TYPE /aws1/cl_knsputrecsreqentry=>tt_putrecordsrequestentrylist.
-    DATA(lv_test_data) = |'{"price": 50.00, "ticker": "AAPL"}'|.
+    DATA(lv_test_data) = '{"price": 50.00, "ticker": "AAPL"}'.
     DATA(lv_xstring_data) = /aws1/cl_rt_util=>string_to_xstring( lv_test_data ).
 
     APPEND NEW /aws1/cl_knsputrecsreqentry(
@@ -308,19 +304,19 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
 
     cl_abap_unit_assert=>assert_bound(
         act = lo_result
-        msg = |Discover input schema did not return a result| ).
+        msg = 'Discover input schema did not return a result' ).
 
     DATA(lo_schema) = lo_result->get_inputschema( ).
     cl_abap_unit_assert=>assert_bound(
         act = lo_schema
-        msg = |Input schema was not discovered| ).
+        msg = 'Input schema was not discovered' ).
 
   ENDMETHOD.
 
   METHOD add_input.
     " First discover the schema
     DATA lt_records TYPE /aws1/cl_knsputrecsreqentry=>tt_putrecordsrequestentrylist.
-    DATA(lv_test_data) = |'{"price": 50.00, "ticker": "AAPL"}'|.
+    DATA(lv_test_data) = '{"price": 50.00, "ticker": "AAPL"}'.
     DATA(lv_xstring_data) = /aws1/cl_rt_util=>string_to_xstring( lv_test_data ).
 
     APPEND NEW /aws1/cl_knsputrecsreqentry(
@@ -348,7 +344,7 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
 
     cl_abap_unit_assert=>assert_bound(
         act = lo_result
-        msg = |Add input did not return a result| ).
+        msg = 'Add input did not return a result' ).
 
     " Update version ID
     av_application_version_id = lo_result->get_applicationversionid( ).
@@ -371,7 +367,7 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
 
     cl_abap_unit_assert=>assert_bound(
         act = lo_result
-        msg = |Add output did not return a result| ).
+        msg = 'Add output did not return a result' ).
 
     " Update version ID
     av_application_version_id = lo_result->get_applicationversionid( ).
@@ -380,10 +376,13 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
 
   METHOD update_code.
     " Simple SQL code that copies from input to output
-    DATA(lv_sql_code) = |CREATE OR REPLACE STREAM "DESTINATION_SQL_STREAM" (ticker VARCHAR(4), price DOUBLE);\n| &&
-                        |CREATE OR REPLACE PUMP "STREAM_PUMP" AS\n| &&
-                        |INSERT INTO "DESTINATION_SQL_STREAM"\n| &&
-                        |SELECT STREAM ticker, price FROM "SOURCE_SQL_STREAM_001";|.
+    DATA(lv_sql_code) = 'CREATE OR REPLACE STREAM "DESTINATION_SQL_STREAM" (ticker VARCHAR(4), price DOUBLE);' &&
+                        cl_abap_char_utilities=>newline &&
+                        'CREATE OR REPLACE PUMP "STREAM_PUMP" AS' &&
+                        cl_abap_char_utilities=>newline &&
+                        'INSERT INTO "DESTINATION_SQL_STREAM"' &&
+                        cl_abap_char_utilities=>newline &&
+                        'SELECT STREAM ticker, price FROM "SOURCE_SQL_STREAM_001";'.
 
     DATA(lo_result) = ao_kn2_actions->update_code(
         iv_application_name = av_application_name
@@ -392,7 +391,7 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
 
     cl_abap_unit_assert=>assert_bound(
         act = lo_result
-        msg = |Update code did not return a result| ).
+        msg = 'Update code did not return a result' ).
 
     " Update version ID
     av_application_version_id = lo_result->get_applicationdetail( )->get_applicationversionid( ).
@@ -420,7 +419,7 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
         exp = 'RUNNING'
         act = lo_app_desc->get_applicationdetail( )->get_applicationstatus( )
-        msg = |Application did not start successfully| ).
+        msg = 'Application did not start successfully' ).
 
   ENDMETHOD.
 
@@ -476,7 +475,7 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
             EXIT.
           ENDIF.
           IF lv_wait_count >= 60.
-            cl_abap_unit_assert=>fail( msg = |Snapshot did not become ready| ).
+            cl_abap_unit_assert=>fail( msg = 'Snapshot did not become ready' ).
           ENDIF.
           WAIT UP TO 5 SECONDS.
         ENDDO.
@@ -488,18 +487,18 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
 
         cl_abap_unit_assert=>assert_bound(
             act = lo_result
-            msg = |Describe snapshot did not return a result| ).
+            msg = 'Describe snapshot did not return a result' ).
 
         DATA(lo_snapshot) = lo_result->get_snapshotdetails( ).
         cl_abap_unit_assert=>assert_equals(
             exp = av_snapshot_name
             act = lo_snapshot->get_snapshotname( )
-            msg = |Snapshot name does not match| ).
+            msg = 'Snapshot name does not match' ).
 
         cl_abap_unit_assert=>assert_equals(
             exp = 'READY'
             act = lo_snapshot->get_snapshotstatus( )
-            msg = |Snapshot status is not READY| ).
+            msg = 'Snapshot status is not READY' ).
 
         " Clean up snapshot
         ao_kn2->deleteapplicationsnapshot(
@@ -539,7 +538,7 @@ CLASS ltc_awsex_cl_kn2_actions IMPLEMENTATION.
 
     cl_abap_unit_assert=>assert_false(
         act = lv_found
-        msg = |Application was not deleted| ).
+        msg = 'Application was not deleted' ).
 
   ENDMETHOD.
 
