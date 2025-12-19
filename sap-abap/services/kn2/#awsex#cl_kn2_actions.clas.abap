@@ -225,12 +225,12 @@ CLASS /AWSEX/CL_KN2_ACTIONS IMPLEMENTATION.
     TRY.
         " iv_stream_arn = 'arn:aws:kinesis:us-east-1:123456789012:stream/my-input-stream'
         " iv_role_arn = 'arn:aws:iam::123456789012:role/MyKinesisAnalyticsRole'
-        DATA(lo_input_starting_position_conf) = NEW /aws1/cl_kn2inpstrtingpositi00(
+        DATA(lo_input_start_pos_conf) = NEW /aws1/cl_kn2inpstrtingpositi00(
             iv_inputstartingposition = 'NOW' ).
         oo_result = lo_kn2->discoverinputschema(
             iv_resourcearn = iv_stream_arn
             iv_serviceexecutionrole = iv_role_arn
-            io_inputstartingpositionconf = lo_input_starting_position_conf ).
+            io_inputstartingpositionconf = lo_input_start_pos_conf ).
         DATA(lo_schema) = oo_result->get_inputschema( ).
         MESSAGE 'Discovered input schema for stream.' TYPE 'I'.
       CATCH /aws1/cx_kn2invalidargumentex.
@@ -334,11 +334,11 @@ CLASS /AWSEX/CL_KN2_ACTIONS IMPLEMENTATION.
         " iv_code = 'CREATE OR REPLACE STREAM "DESTINATION_SQL_STREAM" ...'
         DATA(lo_code_content_update) = NEW /aws1/cl_kn2codecontentupdate(
             iv_textcontentupdate = iv_code ).
-        DATA(lo_application_code_config_update) = NEW /aws1/cl_kn2applicationcodec02(
+        DATA(lo_app_code_config_update) = NEW /aws1/cl_kn2applicationcodec02(
             iv_codecontenttypeupdate = 'PLAINTEXT'
             io_codecontentupdate = lo_code_content_update ).
         DATA(lo_application_conf_update) = NEW /aws1/cl_kn2applicationconfupd(
-            io_applicationcodeconfigurationupdate = lo_application_code_config_update ).
+            io_applicationcodeconfigurationupdate = lo_app_code_config_update ).
         oo_result = lo_kn2->updateapplication(
             iv_applicationname = iv_application_name
             iv_currentapplicationvrsid = iv_current_application_vrs_id
@@ -375,9 +375,9 @@ CLASS /AWSEX/CL_KN2_ACTIONS IMPLEMENTATION.
             iv_inputid = iv_input_id ).
         DATA lt_sql_run_confs TYPE /aws1/cl_kn2sqlrunconf=>tt_sqlrunconfigurations.
         APPEND lo_sql_run_conf TO lt_sql_run_confs.
-        DATA(lo_input_starting_position_conf) = NEW /aws1/cl_kn2inpstrtingpositi00(
+        DATA(lo_input_start_pos_conf) = NEW /aws1/cl_kn2inpstrtingpositi00(
             iv_inputstartingposition = 'NOW' ).
-        lo_sql_run_conf->set_inputstartingpositionconf( lo_input_starting_position_conf ).
+        lo_sql_run_conf->set_inputstartingpositionconf( lo_input_start_pos_conf ).
         DATA(lo_run_conf) = NEW /aws1/cl_kn2runconfiguration(
             it_sqlrunconfigurations = lt_sql_run_confs ).
         lo_kn2->startapplication(
