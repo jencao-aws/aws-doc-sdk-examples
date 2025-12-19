@@ -33,22 +33,24 @@ For prerequisites, see the [README](../../README.md#Prerequisites) in the `sap-a
 
 Code excerpts that show you how to call individual service functions.
 
-- [CreateTopic](%23awsex%23cl_sns_actions.clas.abap#L73)
-- [DeleteTopic](%23awsex%23cl_sns_actions.clas.abap#L90)
-- [GetTopicAttributes](%23awsex%23cl_sns_actions.clas.abap#L107)
-- [ListSubscriptions](%23awsex%23cl_sns_actions.clas.abap#L125)
-- [ListTopics](%23awsex%23cl_sns_actions.clas.abap#L143)
-- [Publish](%23awsex%23cl_sns_actions.clas.abap#L161)
-- [SetTopicAttributes](%23awsex%23cl_sns_actions.clas.abap#L180)
-- [Subscribe](%23awsex%23cl_sns_actions.clas.abap#L200)
-- [Unsubscribe](%23awsex%23cl_sns_actions.clas.abap#L223)
+- [CreateTopic](#awsex#cl_sns_actions.clas.abap#L103)
+- [DeleteTopic](#awsex#cl_sns_actions.clas.abap#L120)
+- [GetTopicAttributes](#awsex#cl_sns_actions.clas.abap#L137)
+- [ListSubscriptions](#awsex#cl_sns_actions.clas.abap#L155)
+- [ListTopics](#awsex#cl_sns_actions.clas.abap#L173)
+- [Publish](#awsex#cl_sns_actions.clas.abap#L191)
+- [SetSubscriptionAttributes](#awsex#cl_sns_actions.clas.abap#L312)
+- [SetTopicAttributes](#awsex#cl_sns_actions.clas.abap#L210)
+- [Subscribe](#awsex#cl_sns_actions.clas.abap#L230)
+- [Unsubscribe](#awsex#cl_sns_actions.clas.abap#L253)
 
 ### Scenarios
 
 Code examples that show you how to accomplish a specific task by calling multiple
 functions within the same service.
 
-- [Create and publish to a FIFO topic](%23awsex%23cl_sns_scenarios.clas.abap)
+- [Create and publish to a FIFO topic](#awsex#cl_sns_scenarios.clas.abap)
+- [Publish an SMS text message](#awsex#cl_sns_actions.clas.abap)
 
 
 <!--custom.examples.start-->
@@ -75,6 +77,18 @@ This example shows you how to create and publish to a FIFO Amazon SNS topic.
 
 <!--custom.scenarios.sns_PublishFifoTopic.start-->
 <!--custom.scenarios.sns_PublishFifoTopic.end-->
+
+#### Publish an SMS text message
+
+This example shows you how to publish SMS messages using Amazon SNS.
+
+
+<!--custom.scenario_prereqs.sns_PublishTextSMS.start-->
+<!--custom.scenario_prereqs.sns_PublishTextSMS.end-->
+
+
+<!--custom.scenarios.sns_PublishTextSMS.start-->
+<!--custom.scenarios.sns_PublishTextSMS.end-->
 
 ### Tests
 
