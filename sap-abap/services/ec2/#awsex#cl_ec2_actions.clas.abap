@@ -195,7 +195,8 @@ CLASS /AWSEX/CL_EC2_ACTIONS IMPLEMENTATION.
         MESSAGE 'Allocated an Elastic IP address.' TYPE 'I'.
       CATCH /aws1/cx_rt_service_generic INTO DATA(lo_exception).
         DATA(lv_error) = |"{ lo_exception->av_err_code }" - { lo_exception->av_err_msg }|.
-        MESSAGE lv_error TYPE 'E'.
+        MESSAGE lv_error TYPE 'I'.
+        RAISE EXCEPTION lo_exception.
     ENDTRY.
     " snippet-end:[ec2.abapv1.allocate_address]
   ENDMETHOD.
@@ -215,7 +216,8 @@ CLASS /AWSEX/CL_EC2_ACTIONS IMPLEMENTATION.
         MESSAGE 'Associated an Elastic IP address with an EC2 instance.' TYPE 'I'.
       CATCH /aws1/cx_rt_service_generic INTO DATA(lo_exception).
         DATA(lv_error) = |"{ lo_exception->av_err_code }" - { lo_exception->av_err_msg }|.
-        MESSAGE lv_error TYPE 'E'.
+        MESSAGE lv_error TYPE 'I'.
+        RAISE EXCEPTION lo_exception.
     ENDTRY.
     " snippet-end:[ec2.abapv1.associate_address]
   ENDMETHOD.
@@ -251,7 +253,8 @@ CLASS /AWSEX/CL_EC2_ACTIONS IMPLEMENTATION.
         MESSAGE 'EC2 instance created.' TYPE 'I'.
       CATCH /aws1/cx_rt_service_generic INTO DATA(lo_exception).
         DATA(lv_error) = |"{ lo_exception->av_err_code }" - { lo_exception->av_err_msg }|.
-        MESSAGE lv_error TYPE 'E'.
+        MESSAGE lv_error TYPE 'I'.
+        RAISE EXCEPTION lo_exception.
     ENDTRY.
     " snippet-end:[ec2.abapv1.create_instance]
   ENDMETHOD.
@@ -269,7 +272,8 @@ CLASS /AWSEX/CL_EC2_ACTIONS IMPLEMENTATION.
         MESSAGE 'Amazon EC2 key pair created.' TYPE 'I'.
       CATCH /aws1/cx_rt_service_generic INTO DATA(lo_exception).
         DATA(lv_error) = |"{ lo_exception->av_err_code }" - { lo_exception->av_err_msg }|.
-        MESSAGE lv_error TYPE 'E'.
+        MESSAGE lv_error TYPE 'I'.
+        RAISE EXCEPTION lo_exception.
     ENDTRY.
     " snippet-end:[ec2.abapv1.create_key_pair]
   ENDMETHOD.
@@ -290,7 +294,8 @@ CLASS /AWSEX/CL_EC2_ACTIONS IMPLEMENTATION.
         MESSAGE 'Security group created.' TYPE 'I'.
       CATCH /aws1/cx_rt_service_generic INTO DATA(lo_exception).
         DATA(lv_error) = |"{ lo_exception->av_err_code }" - { lo_exception->av_err_msg }|.
-        MESSAGE lv_error TYPE 'E'.
+        MESSAGE lv_error TYPE 'I'.
+        RAISE EXCEPTION lo_exception.
     ENDTRY.
     " snippet-end:[ec2.abapv1.create_security_group]
   ENDMETHOD.
@@ -308,7 +313,8 @@ CLASS /AWSEX/CL_EC2_ACTIONS IMPLEMENTATION.
         MESSAGE 'Amazon EC2 key pair deleted.' TYPE 'I'.
       CATCH /aws1/cx_rt_service_generic INTO DATA(lo_exception).
         DATA(lv_error) = |"{ lo_exception->av_err_code }" - { lo_exception->av_err_msg }|.
-        MESSAGE lv_error TYPE 'E'.
+        MESSAGE lv_error TYPE 'I'.
+        RAISE EXCEPTION lo_exception.
     ENDTRY.
     " snippet-end:[ec2.abapv1.delete_key_pair]
   ENDMETHOD.
@@ -326,7 +332,8 @@ CLASS /AWSEX/CL_EC2_ACTIONS IMPLEMENTATION.
         MESSAGE 'Security group deleted.' TYPE 'I'.
       CATCH /aws1/cx_rt_service_generic INTO DATA(lo_exception).
         DATA(lv_error) = |"{ lo_exception->av_err_code }" - { lo_exception->av_err_msg }|.
-        MESSAGE lv_error TYPE 'E'.
+        MESSAGE lv_error TYPE 'I'.
+        RAISE EXCEPTION lo_exception.
     ENDTRY.
     " snippet-end:[ec2.abapv1.delete_security_group]
   ENDMETHOD.
@@ -345,7 +352,8 @@ CLASS /AWSEX/CL_EC2_ACTIONS IMPLEMENTATION.
         MESSAGE 'Retrieved information about Elastic IP addresses.' TYPE 'I'.
       CATCH /aws1/cx_rt_service_generic INTO DATA(lo_exception).
         DATA(lv_error) = |"{ lo_exception->av_err_code }" - { lo_exception->av_err_msg }|.
-        MESSAGE lv_error TYPE 'E'.
+        MESSAGE lv_error TYPE 'I'.
+        RAISE EXCEPTION lo_exception.
     ENDTRY.
     " snippet-end:[ec2.abapv1.describe_addresses]
   ENDMETHOD.
@@ -365,7 +373,8 @@ CLASS /AWSEX/CL_EC2_ACTIONS IMPLEMENTATION.
 
       CATCH /aws1/cx_rt_service_generic INTO DATA(lo_exception).
         DATA(lv_error) = |"{ lo_exception->av_err_code }" - { lo_exception->av_err_msg }|.
-        MESSAGE lv_error TYPE 'E'.
+        MESSAGE lv_error TYPE 'I'.
+        RAISE EXCEPTION lo_exception.
     ENDTRY.
 
     " snippet-end:[ec2.abapv1.describe_availability_zones]
@@ -398,7 +407,8 @@ CLASS /AWSEX/CL_EC2_ACTIONS IMPLEMENTATION.
         MESSAGE 'Retrieved information about EC2 instances.' TYPE 'I'.
       CATCH /aws1/cx_rt_service_generic INTO DATA(lo_exception).
         DATA(lv_error) = |"{ lo_exception->av_err_code }" - { lo_exception->av_err_msg }|.
-        MESSAGE lv_error TYPE 'E'.
+        MESSAGE lv_error TYPE 'I'.
+        RAISE EXCEPTION lo_exception.
     ENDTRY.
     " snippet-end:[ec2.abapv1.describe_instances]
   ENDMETHOD.
@@ -417,7 +427,8 @@ CLASS /AWSEX/CL_EC2_ACTIONS IMPLEMENTATION.
         MESSAGE 'Retrieved information about key pairs.' TYPE 'I'.
       CATCH /aws1/cx_rt_service_generic INTO DATA(lo_exception).
         DATA(lv_error) = |"{ lo_exception->av_err_code }" - { lo_exception->av_err_msg }|.
-        MESSAGE lv_error TYPE 'E'.
+        MESSAGE lv_error TYPE 'I'.
+        RAISE EXCEPTION lo_exception.
     ENDTRY.
     " snippet-end:[ec2.abapv1.describe_key_pairs]
   ENDMETHOD.
@@ -436,7 +447,8 @@ CLASS /AWSEX/CL_EC2_ACTIONS IMPLEMENTATION.
         MESSAGE 'Retrieved information about Regions.' TYPE 'I'.
       CATCH /aws1/cx_rt_service_generic INTO DATA(lo_exception).
         DATA(lv_error) = |"{ lo_exception->av_err_code }" - { lo_exception->av_err_msg }|.
-        MESSAGE lv_error TYPE 'E'.
+        MESSAGE lv_error TYPE 'I'.
+        RAISE EXCEPTION lo_exception.
     ENDTRY.
 
     " snippet-end:[ec2.abapv1.describe_regions]
@@ -458,7 +470,8 @@ CLASS /AWSEX/CL_EC2_ACTIONS IMPLEMENTATION.
         MESSAGE 'Retrieved information about security groups.' TYPE 'I'.
       CATCH /aws1/cx_rt_service_generic INTO DATA(lo_exception).
         DATA(lv_error) = |"{ lo_exception->av_err_code }" - { lo_exception->av_err_msg }|.
-        MESSAGE lv_error TYPE 'E'.
+        MESSAGE lv_error TYPE 'I'.
+        RAISE EXCEPTION lo_exception.
     ENDTRY.
     " snippet-end:[ec2.abapv1.describe_security_groups]
   ENDMETHOD.
@@ -492,10 +505,12 @@ CLASS /AWSEX/CL_EC2_ACTIONS IMPLEMENTATION.
           MESSAGE 'Detailed monitoring enabled.' TYPE 'I'.
           " If the error code returned is `UnauthorizedOperation`, then you don't have the required permissions to monitor this instance. "
         ELSEIF lo_exception->av_err_code = 'UnauthorizedOperation'.
-          MESSAGE 'Dry run to enable detailed monitoring failed. User does not have the permissions to monitor the instance.' TYPE 'E'.
+          MESSAGE 'Dry run to enable detailed monitoring failed. User does not have the permissions to monitor the instance.' TYPE 'I'.
+          RAISE EXCEPTION lo_exception.
         ELSE.
           DATA(lv_error) = |"{ lo_exception->av_err_code }" - { lo_exception->av_err_msg }|.
-          MESSAGE lv_error TYPE 'E'.
+          MESSAGE lv_error TYPE 'I'.
+        RAISE EXCEPTION lo_exception.
         ENDIF.
     ENDTRY.
     " snippet-end:[ec2.abapv1.monitor_instance]
@@ -529,10 +544,12 @@ CLASS /AWSEX/CL_EC2_ACTIONS IMPLEMENTATION.
           MESSAGE 'Instance rebooted.' TYPE 'I'.
           " If the error code returned is `UnauthorizedOperation`, then you don't have the required permissions to reboot this instance. "
         ELSEIF lo_exception->av_err_code = 'UnauthorizedOperation'.
-          MESSAGE 'Dry run to reboot instance failed. User does not have permissions to reboot the instance.' TYPE 'E'.
+          MESSAGE 'Dry run to reboot instance failed. User does not have permissions to reboot the instance.' TYPE 'I'.
+          RAISE EXCEPTION lo_exception.
         ELSE.
           DATA(lv_error) = |"{ lo_exception->av_err_code }" - { lo_exception->av_err_msg }|.
-          MESSAGE lv_error TYPE 'E'.
+          MESSAGE lv_error TYPE 'I'.
+        RAISE EXCEPTION lo_exception.
         ENDIF.
     ENDTRY.
     " snippet-end:[ec2.abapv1.reboot_instance]
@@ -551,7 +568,8 @@ CLASS /AWSEX/CL_EC2_ACTIONS IMPLEMENTATION.
         MESSAGE 'Elastic IP address released.' TYPE 'I'.
       CATCH /aws1/cx_rt_service_generic INTO DATA(lo_exception).
         DATA(lv_error) = |"{ lo_exception->av_err_code }" - { lo_exception->av_err_msg }|.
-        MESSAGE lv_error TYPE 'E'.
+        MESSAGE lv_error TYPE 'I'.
+        RAISE EXCEPTION lo_exception.
     ENDTRY.
     " snippet-end:[ec2.abapv1.release_address]
   ENDMETHOD.
@@ -585,10 +603,12 @@ CLASS /AWSEX/CL_EC2_ACTIONS IMPLEMENTATION.
           MESSAGE 'Successfully started the EC2 instance.' TYPE 'I'.
           " If the error code returned is `UnauthorizedOperation`, then you don't have the required permissions to start this instance. "
         ELSEIF lo_exception->av_err_code = 'UnauthorizedOperation'.
-          MESSAGE 'Dry run to start instance failed. User does not have permissions to start the instance.' TYPE 'E'.
+          MESSAGE 'Dry run to start instance failed. User does not have permissions to start the instance.' TYPE 'I'.
+          RAISE EXCEPTION lo_exception.
         ELSE.
           DATA(lv_error) = |"{ lo_exception->av_err_code }" - { lo_exception->av_err_msg }|.
-          MESSAGE lv_error TYPE 'E'.
+          MESSAGE lv_error TYPE 'I'.
+        RAISE EXCEPTION lo_exception.
         ENDIF.
     ENDTRY.
     " snippet-end:[ec2.abapv1.start_instance]
@@ -623,10 +643,12 @@ CLASS /AWSEX/CL_EC2_ACTIONS IMPLEMENTATION.
           MESSAGE 'Successfully stopped the EC2 instance.' TYPE 'I'.
           " If the error code returned is `UnauthorizedOperation`, then you don't have the required permissions to stop this instance. "
         ELSEIF lo_exception->av_err_code = 'UnauthorizedOperation'.
-          MESSAGE 'Dry run to stop instance failed. User does not have permissions to stop the instance.' TYPE 'E'.
+          MESSAGE 'Dry run to stop instance failed. User does not have permissions to stop the instance.' TYPE 'I'.
+          RAISE EXCEPTION lo_exception.
         ELSE.
           DATA(lv_error) = |"{ lo_exception->av_err_code }" - { lo_exception->av_err_msg }|.
-          MESSAGE lv_error TYPE 'E'.
+          MESSAGE lv_error TYPE 'I'.
+        RAISE EXCEPTION lo_exception.
         ENDIF.
     ENDTRY.
     " snippet-end:[ec2.abapv1.stop_instance]
@@ -645,7 +667,8 @@ CLASS /AWSEX/CL_EC2_ACTIONS IMPLEMENTATION.
         MESSAGE 'Disassociated Elastic IP address from instance.' TYPE 'I'.
       CATCH /aws1/cx_rt_service_generic INTO DATA(lo_exception).
         DATA(lv_error) = |"{ lo_exception->av_err_code }" - { lo_exception->av_err_msg }|.
-        MESSAGE lv_error TYPE 'E'.
+        MESSAGE lv_error TYPE 'I'.
+        RAISE EXCEPTION lo_exception.
     ENDTRY.
     " snippet-end:[ec2.abapv1.disassociate_address]
   ENDMETHOD.
@@ -663,7 +686,8 @@ CLASS /AWSEX/CL_EC2_ACTIONS IMPLEMENTATION.
         MESSAGE 'Terminated EC2 instance(s).' TYPE 'I'.
       CATCH /aws1/cx_rt_service_generic INTO DATA(lo_exception).
         DATA(lv_error) = |"{ lo_exception->av_err_code }" - { lo_exception->av_err_msg }|.
-        MESSAGE lv_error TYPE 'E'.
+        MESSAGE lv_error TYPE 'I'.
+        RAISE EXCEPTION lo_exception.
     ENDTRY.
     " snippet-end:[ec2.abapv1.terminate_instances]
   ENDMETHOD.
@@ -682,7 +706,8 @@ CLASS /AWSEX/CL_EC2_ACTIONS IMPLEMENTATION.
         MESSAGE 'Retrieved information about Amazon Machine Images.' TYPE 'I'.
       CATCH /aws1/cx_rt_service_generic INTO DATA(lo_exception).
         DATA(lv_error) = |"{ lo_exception->av_err_code }" - { lo_exception->av_err_msg }|.
-        MESSAGE lv_error TYPE 'E'.
+        MESSAGE lv_error TYPE 'I'.
+        RAISE EXCEPTION lo_exception.
     ENDTRY.
     " snippet-end:[ec2.abapv1.describe_images]
   ENDMETHOD.
@@ -701,7 +726,8 @@ CLASS /AWSEX/CL_EC2_ACTIONS IMPLEMENTATION.
         MESSAGE 'Retrieved information about instance types.' TYPE 'I'.
       CATCH /aws1/cx_rt_service_generic INTO DATA(lo_exception).
         DATA(lv_error) = |"{ lo_exception->av_err_code }" - { lo_exception->av_err_msg }|.
-        MESSAGE lv_error TYPE 'E'.
+        MESSAGE lv_error TYPE 'I'.
+        RAISE EXCEPTION lo_exception.
     ENDTRY.
     " snippet-end:[ec2.abapv1.describe_instance_types]
   ENDMETHOD.
@@ -740,7 +766,8 @@ CLASS /AWSEX/CL_EC2_ACTIONS IMPLEMENTATION.
         MESSAGE 'Retrieved information about route tables.' TYPE 'I'.
       CATCH /aws1/cx_rt_service_generic INTO DATA(lo_exception).
         DATA(lv_error) = |"{ lo_exception->av_err_code }" - { lo_exception->av_err_msg }|.
-        MESSAGE lv_error TYPE 'E'.
+        MESSAGE lv_error TYPE 'I'.
+        RAISE EXCEPTION lo_exception.
     ENDTRY.
     " snippet-end:[ec2.abapv1.describe_route_tables]
   ENDMETHOD.
@@ -762,7 +789,8 @@ CLASS /AWSEX/CL_EC2_ACTIONS IMPLEMENTATION.
         MESSAGE 'VPC endpoint created.' TYPE 'I'.
       CATCH /aws1/cx_rt_service_generic INTO DATA(lo_exception).
         DATA(lv_error) = |"{ lo_exception->av_err_code }" - { lo_exception->av_err_msg }|.
-        MESSAGE lv_error TYPE 'E'.
+        MESSAGE lv_error TYPE 'I'.
+        RAISE EXCEPTION lo_exception.
     ENDTRY.
     " snippet-end:[ec2.abapv1.create_vpc_endpoint]
   ENDMETHOD.
@@ -780,7 +808,8 @@ CLASS /AWSEX/CL_EC2_ACTIONS IMPLEMENTATION.
         MESSAGE 'VPC endpoint(s) deleted.' TYPE 'I'.
       CATCH /aws1/cx_rt_service_generic INTO DATA(lo_exception).
         DATA(lv_error) = |"{ lo_exception->av_err_code }" - { lo_exception->av_err_msg }|.
-        MESSAGE lv_error TYPE 'E'.
+        MESSAGE lv_error TYPE 'I'.
+        RAISE EXCEPTION lo_exception.
     ENDTRY.
     " snippet-end:[ec2.abapv1.delete_vpc_endpoints]
   ENDMETHOD.
@@ -798,7 +827,8 @@ CLASS /AWSEX/CL_EC2_ACTIONS IMPLEMENTATION.
         MESSAGE 'VPC deleted.' TYPE 'I'.
       CATCH /aws1/cx_rt_service_generic INTO DATA(lo_exception).
         DATA(lv_error) = |"{ lo_exception->av_err_code }" - { lo_exception->av_err_msg }|.
-        MESSAGE lv_error TYPE 'E'.
+        MESSAGE lv_error TYPE 'I'.
+        RAISE EXCEPTION lo_exception.
     ENDTRY.
     " snippet-end:[ec2.abapv1.delete_vpc]
   ENDMETHOD.
