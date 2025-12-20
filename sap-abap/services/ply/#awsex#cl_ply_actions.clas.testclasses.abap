@@ -69,13 +69,8 @@ CLASS ltc_awsex_cl_ply_actions IMPLEMENTATION.
     ENDTRY.
 
     " Create a lexicon for tests that need one
-    " Lexicon name must be alphanumeric only, max 20 characters
-    av_lexicon_name = |lex{ lv_uuid }|.
+    av_lexicon_name = |{ /awsex/cl_utils=>cv_asset_prefix }-lex-{ lv_uuid }|.
     av_lexicon_name = to_lower( av_lexicon_name ).
-    " Ensure it's not longer than 20 characters
-    IF strlen( av_lexicon_name ) > 20.
-      av_lexicon_name = av_lexicon_name(20).
-    ENDIF.
 
     " Create the lexicon in class_setup
     DATA(lv_lexicon_content) = |<?xml version="1.0" encoding="UTF-8"?>\n| &&
@@ -133,9 +128,6 @@ CLASS ltc_awsex_cl_ply_actions IMPLEMENTATION.
   METHOD describe_voices.
     DATA lo_result TYPE REF TO /aws1/cl_plydescrvoicesoutput.
 
-    " Don't pass optional parameters if they're not set
-    " iv_engine - Example: 'neural'
-    " iv_language - Example: 'en-US'
     ao_ply_actions->describe_voices(
       IMPORTING
         oo_result = lo_result ).
@@ -157,7 +149,6 @@ CLASS ltc_awsex_cl_ply_actions IMPLEMENTATION.
     " iv_voice_id - Example: 'Joanna'
     " iv_engine - Example: 'neural'
     " iv_output_fmt - Example: 'mp3'
-    " Don't pass iv_lang_code as it's optional and will cause validation error if empty
     ao_ply_actions->synthesize_speech(
       EXPORTING
         iv_text = 'Hello from Amazon Polly'
@@ -180,14 +171,10 @@ CLASS ltc_awsex_cl_ply_actions IMPLEMENTATION.
   METHOD put_lexicon.
     " Test creating a new lexicon (using a different name than class-level lexicon)
     DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
-    " Lexicon name must be alphanumeric only, max 20 characters
-    DATA(lv_new_lexicon_name) = |put{ lv_uuid }|.
+    DATA(lv_new_lexicon_name) = |{ /awsex/cl_utils=>cv_asset_prefix }-put-{ lv_uuid }|.
     lv_new_lexicon_name = to_lower( lv_new_lexicon_name ).
-    IF strlen( lv_new_lexicon_name ) > 20.
-      lv_new_lexicon_name = lv_new_lexicon_name(20).
-    ENDIF.
 
-    " iv_name - Example: 'testlexicon'
+    " iv_name - Example: 'test-lexicon'
     " iv_content - Example: PLS or SSML lexicon content
     DATA(lv_lexicon_content) = |<?xml version="1.0" encoding="UTF-8"?>\n| &&
       |<lexicon version="1.0" xmlns="http://www.w3.org/2005/01/pronunciation-lexicon" | &&
@@ -224,7 +211,7 @@ CLASS ltc_awsex_cl_ply_actions IMPLEMENTATION.
     " Verify it exists, if not, fail the test
     DATA lo_result TYPE REF TO /aws1/cl_plygetlexiconoutput.
 
-    " iv_name - Example: 'testlexicon'
+    " iv_name - Example: 'test-lexicon'
     ao_ply_actions->get_lexicon(
       EXPORTING
         iv_name = av_lexicon_name
@@ -288,7 +275,6 @@ CLASS ltc_awsex_cl_ply_actions IMPLEMENTATION.
     " iv_engine - Example: 'neural'
     " iv_audio_format - Example: 'mp3'
     " iv_s3_bucket - Example: 'my-bucket'
-    " Don't pass iv_lang_code as it's optional and will cause validation error if empty
     ao_ply_actions->start_speech_synthesis_task(
       EXPORTING
         iv_text = 'This is a test for asynchronous speech synthesis from ABAP SDK.'
@@ -402,7 +388,6 @@ CLASS ltc_awsex_cl_ply_actions IMPLEMENTATION.
       ENDTRY.
     ENDIF.
 
-    " Don't pass optional parameters - they cause validation errors if empty
     " iv_max_results - Example: 10
     " iv_status - Example: 'completed', 'scheduled', 'inProgress', 'failed'
     ao_ply_actions->list_speech_synthesis_tasks(
@@ -438,12 +423,8 @@ CLASS ltc_awsex_cl_ply_actions IMPLEMENTATION.
   METHOD delete_lexicon.
     " Create a new lexicon specifically for this test
     DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
-    " Lexicon name must be alphanumeric only, max 20 characters
-    DATA(lv_delete_lex_name) = |del{ lv_uuid }|.
+    DATA(lv_delete_lex_name) = |{ /awsex/cl_utils=>cv_asset_prefix }-del-{ lv_uuid }|.
     lv_delete_lex_name = to_lower( lv_delete_lex_name ).
-    IF strlen( lv_delete_lex_name ) > 20.
-      lv_delete_lex_name = lv_delete_lex_name(20).
-    ENDIF.
 
     DATA(lv_lexicon_content) = |<?xml version="1.0" encoding="UTF-8"?>\n| &&
       |<lexicon version="1.0" xmlns="http://www.w3.org/2005/01/pronunciation-lexicon" | &&
@@ -475,7 +456,7 @@ CLASS ltc_awsex_cl_ply_actions IMPLEMENTATION.
         cl_abap_unit_assert=>fail( 'Lexicon was not created successfully' ).
     ENDTRY.
 
-    " iv_name - Example: 'lexicontodelete'
+    " iv_name - Example: 'lexicon-to-delete'
     " Now delete it using the action method
     ao_ply_actions->delete_lexicon( lv_delete_lex_name ).
 
