@@ -62,6 +62,7 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
     DATA lt_objects TYPE STANDARD TABLE OF /aws1/s3_objectkey.
     DATA lv_object_key TYPE /aws1/s3_objectkey.
     DATA lv_manifest_content TYPE string.
+    DATA lv_object_content TYPE string.
     DATA lo_manifest_result TYPE REF TO /aws1/cl_s3_putobjectoutput.
     DATA lo_generic_ex TYPE REF TO /aws1/cx_rt_generic.
 
@@ -186,10 +187,11 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
         APPEND |object-key-3.txt| TO lt_objects.
 
         LOOP AT lt_objects INTO lv_object_key.
+          lv_object_content = |Content for { lv_object_key }|.
           ao_s3->putobject(
             iv_bucket = av_bucket_name
             iv_key = lv_object_key
-            iv_body = |Content for { lv_object_key }|
+            iv_body = /awsex/cl_utils=>string_to_xstring( lv_object_content )
             it_tagging = VALUE /aws1/cl_s3_tag=>tt_tagging(
               ( NEW /aws1/cl_s3_tag( iv_key = 'convert_test' iv_value = 'true' ) )
             )
@@ -204,7 +206,7 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
         lo_manifest_result = ao_s3->putobject(
           iv_bucket = av_bucket_name
           iv_key = 'job-manifest.csv'
-          iv_body = lv_manifest_content
+          iv_body = /awsex/cl_utils=>string_to_xstring( lv_manifest_content )
           it_tagging = VALUE /aws1/cl_s3_tag=>tt_tagging(
             ( NEW /aws1/cl_s3_tag( iv_key = 'convert_test' iv_value = 'true' ) )
           )
