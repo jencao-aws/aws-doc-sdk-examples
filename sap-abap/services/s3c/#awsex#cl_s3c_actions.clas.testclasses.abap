@@ -204,9 +204,7 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
               iv_bucket = av_bucket_name
               iv_key = lv_object_key
               iv_body = lv_body
-              it_tagging = VALUE /aws1/cl_s3_tag=>tt_tagging(
-                ( NEW /aws1/cl_s3_tag( iv_key = 'convert_test' iv_value = 'true' ) )
-              )
+              iv_tagging = 'convert_test=true'
             ).
           ENDIF.
         ENDLOOP.
@@ -230,9 +228,7 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
             iv_bucket = av_bucket_name
             iv_key = 'job-manifest.csv'
             iv_body = lv_body
-            it_tagging = VALUE /aws1/cl_s3_tag=>tt_tagging(
-              ( NEW /aws1/cl_s3_tag( iv_key = 'convert_test' iv_value = 'true' ) )
-            )
+            iv_tagging = 'convert_test=true'
           ).
         ENDIF.
 
