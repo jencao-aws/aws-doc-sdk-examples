@@ -56,11 +56,7 @@ CLASS ltc_awsex_cl_sup_actions IMPLEMENTATION.
     ao_sup_actions = NEW /awsex/cl_sup_actions( ).
 
     " Generate UUID for unique resource names
-    TRY.
-        av_lmd_uuid = /aws1/cl_rt_util=>uuid_create( ).
-      CATCH /aws1/cx_rt_generic.
-        av_lmd_uuid = 'test' && sy-datum && sy-uzeit.
-    ENDTRY.
+    av_lmd_uuid = /awsex/cl_utils=>get_random_string( ).
 
     " Setup IAM permissions if needed
     setup_iam_permissions( ).
@@ -219,12 +215,15 @@ CLASS ltc_awsex_cl_sup_actions IMPLEMENTATION.
     DATA lv_retries TYPE i VALUE 0.
     DATA lv_found TYPE abap_bool VALUE abap_false.
     DATA lv_timestamp TYPE timestamp.
+    DATA lv_date_str TYPE string.
     DATA lv_start_time TYPE string.
     DATA lv_end_time TYPE string.
 
     GET TIME STAMP FIELD lv_timestamp.
-    lv_start_time = |{ lv_timestamp+0(4) }-{ lv_timestamp+4(2) }-{ lv_timestamp+6(2) }T00:00:00Z|.
-    lv_end_time = |{ lv_timestamp+0(4) }-{ lv_timestamp+4(2) }-{ lv_timestamp+6(2) }T23:59:59Z|.
+    " Extract date parts from timestamp
+    lv_date_str = lv_timestamp.
+    lv_start_time = |{ lv_date_str+0(4) }-{ lv_date_str+4(2) }-{ lv_date_str+6(2) }T00:00:00Z|.
+    lv_end_time = |{ lv_date_str+0(4) }-{ lv_date_str+4(2) }-{ lv_date_str+6(2) }T23:59:59Z|.
 
     DO 10 TIMES.
       lv_retries = lv_retries + 1.
@@ -335,12 +334,7 @@ CLASS ltc_awsex_cl_sup_actions IMPLEMENTATION.
     DATA lv_uuid_string TYPE string.
 
     " Create unique UUID for this test
-    TRY.
-        DATA(lv_test_uuid) = /aws1/cl_rt_util=>uuid_create( ).
-        lv_uuid_string = lv_test_uuid.
-      CATCH /aws1/cx_rt_generic.
-        lv_uuid_string = |test{ sy-datum }{ sy-uzeit }|.
-    ENDTRY.
+    lv_uuid_string = /awsex/cl_utils=>get_random_string( ).
 
     " Create case with all required parameters
     ao_sup_actions->create_case(
@@ -477,6 +471,7 @@ CLASS ltc_awsex_cl_sup_actions IMPLEMENTATION.
   METHOD describe_cases.
     DATA lt_cases TYPE /aws1/cl_supcasedetails=>tt_caselist.
     DATA lv_timestamp TYPE timestamp.
+    DATA lv_date_str TYPE string.
     DATA lv_start_time TYPE string.
     DATA lv_end_time TYPE string.
 
@@ -484,8 +479,9 @@ CLASS ltc_awsex_cl_sup_actions IMPLEMENTATION.
     GET TIME STAMP FIELD lv_timestamp.
 
     " Convert to ISO 8601 format for current day
-    lv_start_time = |{ lv_timestamp+0(4) }-{ lv_timestamp+4(2) }-{ lv_timestamp+6(2) }T00:00:00Z|.
-    lv_end_time = |{ lv_timestamp+0(4) }-{ lv_timestamp+4(2) }-{ lv_timestamp+6(2) }T23:59:59Z|.
+    lv_date_str = lv_timestamp.
+    lv_start_time = |{ lv_date_str+0(4) }-{ lv_date_str+4(2) }-{ lv_date_str+6(2) }T00:00:00Z|.
+    lv_end_time = |{ lv_date_str+0(4) }-{ lv_date_str+4(2) }-{ lv_date_str+6(2) }T23:59:59Z|.
 
     " Test with open cases
     ao_sup_actions->describe_cases(
@@ -524,12 +520,7 @@ CLASS ltc_awsex_cl_sup_actions IMPLEMENTATION.
     DATA lv_uuid_string TYPE string.
 
     " Create unique UUID for this test
-    TRY.
-        DATA(lv_test_uuid) = /aws1/cl_rt_util=>uuid_create( ).
-        lv_uuid_string = lv_test_uuid.
-      CATCH /aws1/cx_rt_generic.
-        lv_uuid_string = |test{ sy-datum }{ sy-uzeit }|.
-    ENDTRY.
+    lv_uuid_string = /awsex/cl_utils=>get_random_string( ).
 
     " Create a new case specifically for resolve testing
     ao_sup_actions->create_case(
