@@ -78,7 +78,9 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
 
         av_account_id = ao_session->get_account_id( ).
         lv_uuid_string = /awsex/cl_utils=>get_random_string( ).
+        TRANSLATE lv_uuid_string TO LOWER CASE.
         av_bucket_name = |s3c-batch-{ lv_uuid_string }|.
+        TRANSLATE av_bucket_name TO LOWER CASE.
         av_role_name = |S3BatchRole{ lv_uuid_string }|.
 
         " Create S3 bucket using utils
