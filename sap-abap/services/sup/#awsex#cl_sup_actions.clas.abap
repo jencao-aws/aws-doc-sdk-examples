@@ -362,7 +362,13 @@ CLASS /AWSEX/CL_SUP_ACTIONS IMPLEMENTATION.
 
         " Filter for resolved cases if requested
         IF iv_resolved = abap_true.
-          DELETE lt_all_cases WHERE table_line->get_status( ) <> 'resolved'.
+          DATA lt_filtered_cases TYPE /aws1/cl_supcasedetails=>tt_caselist.
+          LOOP AT lt_all_cases INTO DATA(lo_case).
+            IF lo_case->get_status( ) = 'resolved'.
+              APPEND lo_case TO lt_filtered_cases.
+            ENDIF.
+          ENDLOOP.
+          lt_all_cases = lt_filtered_cases.
         ENDIF.
 
         ot_cases = lt_all_cases.
