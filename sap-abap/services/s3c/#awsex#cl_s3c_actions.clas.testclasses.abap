@@ -191,7 +191,7 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
           ao_s3->putobject(
             iv_bucket = av_bucket_name
             iv_key = lv_object_key
-            iv_body = /awsex/cl_utils=>string_to_xstring( lv_object_content )
+            iv_body = cl_abap_conv_codepage=>create_out( )->convert( lv_object_content )
             it_tagging = VALUE /aws1/cl_s3_tag=>tt_tagging(
               ( NEW /aws1/cl_s3_tag( iv_key = 'convert_test' iv_value = 'true' ) )
             )
@@ -206,7 +206,7 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
         lo_manifest_result = ao_s3->putobject(
           iv_bucket = av_bucket_name
           iv_key = 'job-manifest.csv'
-          iv_body = /awsex/cl_utils=>string_to_xstring( lv_manifest_content )
+          iv_body = cl_abap_conv_codepage=>create_out( )->convert( lv_manifest_content )
           it_tagging = VALUE /aws1/cl_s3_tag=>tt_tagging(
             ( NEW /aws1/cl_s3_tag( iv_key = 'convert_test' iv_value = 'true' ) )
           )
