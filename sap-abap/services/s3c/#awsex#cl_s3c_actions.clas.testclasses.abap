@@ -71,7 +71,11 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
     
     TRY.
         ao_session = /aws1/cl_rt_session_aws=>create( iv_profile_id = cv_pfl ).
-        ao_s3c = /aws1/cl_s3c_factory=>create( ao_session ).
+        DATA(lv_region) = ao_session->get_region( ).
+        ao_s3c = /aws1/cl_s3c_factory=>create( 
+          io_session = ao_session 
+          iv_region = lv_region
+        ).
         ao_s3 = /aws1/cl_s3_factory=>create( ao_session ).
         ao_iam = /aws1/cl_iam_factory=>create( ao_session ).
         ao_s3c_actions = NEW /awsex/cl_s3c_actions( ).
