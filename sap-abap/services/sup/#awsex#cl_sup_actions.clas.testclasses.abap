@@ -7,8 +7,6 @@ CLASS ltc_awsex_cl_sup_actions DEFINITION FOR TESTING DURATION LONG RISK LEVEL D
 
   PRIVATE SECTION.
     CONSTANTS cv_pfl TYPE /aws1/rt_profile_id VALUE 'ZCODE_DEMO'.
-    CONSTANTS cv_tag_key TYPE /aws1/taggingtagkey VALUE 'convert_test'.
-    CONSTANTS cv_tag_value TYPE /aws1/taggingtagvalue VALUE 'sup_actions'.
 
     CLASS-DATA ao_sup TYPE REF TO /aws1/if_sup.
     CLASS-DATA ao_iam TYPE REF TO /aws1/if_iam.
