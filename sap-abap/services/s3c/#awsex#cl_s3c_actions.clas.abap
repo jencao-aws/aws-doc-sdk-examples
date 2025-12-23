@@ -8,7 +8,6 @@ CLASS /awsex/cl_s3c_actions DEFINITION
   PUBLIC SECTION.
     METHODS create_job
       IMPORTING
-        !iv_account_id        TYPE /aws1/s3caccountid
         !iv_role_arn          TYPE /aws1/s3ciamrolearn
         !iv_manifest_location TYPE /aws1/s3cs3keyarnstring
         !iv_manifest_etag     TYPE /aws1/s3cnonemptymaxlength1000
@@ -24,7 +23,6 @@ CLASS /awsex/cl_s3c_actions DEFINITION
         /aws1/cx_rt_generic .
     METHODS update_job_priority
       IMPORTING
-        !iv_account_id   TYPE /aws1/s3caccountid
         !iv_job_id       TYPE /aws1/s3cjobid
         !iv_priority     TYPE /aws1/s3cjobpriority
       RAISING
@@ -36,7 +34,6 @@ CLASS /awsex/cl_s3c_actions DEFINITION
         /aws1/cx_rt_generic .
     METHODS update_job_status
       IMPORTING
-        !iv_account_id            TYPE /aws1/s3caccountid
         !iv_job_id                TYPE /aws1/s3cjobid
         !iv_requested_job_status  TYPE /aws1/s3crequestedjobstatus
         !iv_status_update_reason  TYPE /aws1/s3cjobstatusupdatereason OPTIONAL
@@ -50,7 +47,6 @@ CLASS /awsex/cl_s3c_actions DEFINITION
         /aws1/cx_rt_generic .
     METHODS describe_job
       IMPORTING
-        !iv_account_id    TYPE /aws1/s3caccountid
         !iv_job_id        TYPE /aws1/s3cjobid
       EXPORTING
         !oo_result        TYPE REF TO /aws1/cl_s3cdescribejobresult
@@ -63,7 +59,6 @@ CLASS /awsex/cl_s3c_actions DEFINITION
         /aws1/cx_rt_generic .
     METHODS get_job_tagging
       IMPORTING
-        !iv_account_id    TYPE /aws1/s3caccountid
         !iv_job_id        TYPE /aws1/s3cjobid
       EXPORTING
         !oo_result        TYPE REF TO /aws1/cl_s3cgetjobtagresult
@@ -75,7 +70,6 @@ CLASS /awsex/cl_s3c_actions DEFINITION
         /aws1/cx_rt_generic .
     METHODS put_job_tagging
       IMPORTING
-        !iv_account_id    TYPE /aws1/s3caccountid
         !iv_job_id        TYPE /aws1/s3cjobid
         !it_tags          TYPE /aws1/cl_s3cs3tag=>tt_s3tagset
       RAISING
@@ -87,7 +81,6 @@ CLASS /awsex/cl_s3c_actions DEFINITION
         /aws1/cx_rt_generic .
     METHODS list_jobs
       IMPORTING
-        !iv_account_id    TYPE /aws1/s3caccountid
         !it_job_statuses  TYPE /aws1/cl_s3cjobstatuslist_w=>tt_jobstatuslist OPTIONAL
         !iv_max_results   TYPE /aws1/s3cmaxresults OPTIONAL
         !iv_next_token    TYPE /aws1/s3cstringfornexttoken OPTIONAL
@@ -100,7 +93,6 @@ CLASS /awsex/cl_s3c_actions DEFINITION
         /aws1/cx_rt_generic .
     METHODS delete_job_tagging
       IMPORTING
-        !iv_account_id    TYPE /aws1/s3caccountid
         !iv_job_id        TYPE /aws1/s3cjobid
       RAISING
         /aws1/cx_s3cinternalserviceex
@@ -157,7 +149,6 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
             iv_prefix = 'batch-op-reports'
             iv_reportscope = 'AllTasks'
           )
-          iv_accountid = iv_account_id
           iv_confirmationrequired = abap_true
           iv_description = 'Batch job for tagging objects'
           iv_priority = 10
@@ -189,7 +180,6 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
     " snippet-start:[s3c.abapv1.delete_job_tagging]
     TRY.
         lo_s3c->deletejobtagging(
-          iv_accountid = iv_account_id
           iv_jobid = iv_job_id
         ).
         MESSAGE 'Job tags deleted successfully.' TYPE 'I'.
@@ -215,7 +205,6 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
     " snippet-start:[s3c.abapv1.describe_job]
     TRY.
         oo_result = lo_s3c->describejob(
-          iv_accountid = iv_account_id
           iv_jobid = iv_job_id
         ).
         DATA(lo_job) = oo_result->get_job( ).
@@ -250,7 +239,6 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
     " snippet-start:[s3c.abapv1.get_job_tagging]
     TRY.
         oo_result = lo_s3c->getjobtagging(
-          iv_accountid = iv_account_id
           iv_jobid = iv_job_id
         ).
         DATA(lt_tags) = oo_result->get_tags( ).
@@ -282,7 +270,6 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
     " snippet-start:[s3c.abapv1.list_jobs]
     TRY.
         oo_result = lo_s3c->listjobs(
-          iv_accountid = iv_account_id
           it_jobstatuses = it_job_statuses
           iv_maxresults = iv_max_results
           iv_nexttoken = iv_next_token
@@ -314,7 +301,6 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
     " snippet-start:[s3c.abapv1.put_job_tagging]
     TRY.
         lo_s3c->putjobtagging(
-          iv_accountid = iv_account_id
           iv_jobid = iv_job_id
           it_tags = it_tags
         ).
@@ -343,7 +329,6 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
     " snippet-start:[s3c.abapv1.update_job_priority]
     TRY.
         DATA(lo_result) = lo_s3c->updatejobpriority(
-          iv_accountid = iv_account_id
           iv_jobid = iv_job_id
           iv_priority = iv_priority
         ).
@@ -373,7 +358,6 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
     " snippet-start:[s3c.abapv1.update_job_status]
     TRY.
         DATA(lo_result) = lo_s3c->updatejobstatus(
-          iv_accountid = iv_account_id
           iv_jobid = iv_job_id
           iv_requestedjobstatus = iv_requested_job_status
           iv_statusupdatereason = iv_status_update_reason

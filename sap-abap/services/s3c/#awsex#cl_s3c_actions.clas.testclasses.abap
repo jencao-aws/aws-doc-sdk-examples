@@ -316,7 +316,6 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
     lv_report_bucket = |arn:aws:s3:::{ av_bucket_name }|.
 
     lv_job_id = ao_s3c_actions->create_job(
-      iv_account_id = av_account_id
       iv_role_arn = av_role_arn
       iv_manifest_location = lv_manifest_location
       iv_manifest_etag = av_manifest_etag
@@ -336,7 +335,6 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
     " Clean up - cancel the job
     TRY.
         ao_s3c->updatejobstatus(
-          iv_accountid = av_account_id
           iv_jobid = lv_job_id
           iv_requestedjobstatus = 'Cancelled'
         ).
@@ -370,14 +368,12 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
 
     " Update priority
     ao_s3c_actions->update_job_priority(
-      iv_account_id = av_account_id
       iv_job_id = lv_job_id
       iv_priority = 60
     ).
 
     " Verify priority was updated
     lo_describe_result = ao_s3c->describejob(
-      iv_accountid = av_account_id
       iv_jobid = lv_job_id
     ).
 
@@ -390,7 +386,6 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
     " Clean up - cancel the job
     TRY.
         ao_s3c->updatejobstatus(
-          iv_accountid = av_account_id
           iv_jobid = lv_job_id
           iv_requestedjobstatus = 'Cancelled'
         ).
@@ -425,7 +420,6 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
 
     " Check current status before cancelling
     lo_describe_result = ao_s3c->describejob(
-      iv_accountid = av_account_id
       iv_jobid = lv_job_id
     ).
 
@@ -434,7 +428,6 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
     " Cancel job
     IF lv_current_status = 'Ready' OR lv_current_status = 'Suspended' OR lv_current_status = 'Active'.
       ao_s3c_actions->update_job_status(
-        iv_account_id = av_account_id
         iv_job_id = lv_job_id
         iv_requested_job_status = 'Cancelled'
         iv_status_update_reason = 'Testing job cancellation'
@@ -445,7 +438,6 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
 
       " Verify status was updated
       lo_describe_result = ao_s3c->describejob(
-        iv_accountid = av_account_id
         iv_jobid = lv_job_id
       ).
 
@@ -479,7 +471,6 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
     " Describe the job
     ao_s3c_actions->describe_job(
       EXPORTING
-        iv_account_id = av_account_id
         iv_job_id = lv_job_id
       IMPORTING
         oo_result = lo_result
@@ -503,7 +494,6 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
     " Clean up - cancel the job
     TRY.
         ao_s3c->updatejobstatus(
-          iv_accountid = av_account_id
           iv_jobid = lv_job_id
           iv_requestedjobstatus = 'Cancelled'
         ).
@@ -531,7 +521,6 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
     " Get job tags
     ao_s3c_actions->get_job_tagging(
       EXPORTING
-        iv_account_id = av_account_id
         iv_job_id = lv_job_id
       IMPORTING
         oo_result = lo_result
@@ -544,7 +533,6 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
     " Clean up - cancel the job
     TRY.
         ao_s3c->updatejobstatus(
-          iv_accountid = av_account_id
           iv_jobid = lv_job_id
           iv_requestedjobstatus = 'Cancelled'
         ).
@@ -583,14 +571,12 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
     ).
 
     ao_s3c_actions->put_job_tagging(
-      iv_account_id = av_account_id
       iv_job_id = lv_job_id
       it_tags = lt_tags
     ).
 
     " Verify tags were added
     lo_result = ao_s3c->getjobtagging(
-      iv_accountid = av_account_id
       iv_jobid = lv_job_id
     ).
 
@@ -623,7 +609,6 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
     " Clean up - cancel the job
     TRY.
         ao_s3c->updatejobstatus(
-          iv_accountid = av_account_id
           iv_jobid = lv_job_id
           iv_requestedjobstatus = 'Cancelled'
         ).
@@ -654,7 +639,6 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
     " List jobs
     ao_s3c_actions->list_jobs(
       EXPORTING
-        iv_account_id = av_account_id
         it_job_statuses = VALUE /aws1/cl_s3cjobstatuslist_w=>tt_jobstatuslist(
           ( NEW /aws1/cl_s3cjobstatuslist_w( 'Active' ) )
           ( NEW /aws1/cl_s3cjobstatuslist_w( 'Complete' ) )
@@ -693,7 +677,6 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
     " Clean up - cancel the job
     TRY.
         ao_s3c->updatejobstatus(
-          iv_accountid = av_account_id
           iv_jobid = lv_job_id
           iv_requestedjobstatus = 'Cancelled'
         ).
@@ -726,20 +709,17 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
     ).
 
     ao_s3c->putjobtagging(
-      iv_accountid = av_account_id
       iv_jobid = lv_job_id
       it_tags = lt_tags
     ).
 
     " Delete all job tags
     ao_s3c_actions->delete_job_tagging(
-      iv_account_id = av_account_id
       iv_job_id = lv_job_id
     ).
 
     " Verify tags were deleted
     lo_result = ao_s3c->getjobtagging(
-      iv_accountid = av_account_id
       iv_jobid = lv_job_id
     ).
 
@@ -751,7 +731,6 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
     " Clean up - cancel the job
     TRY.
         ao_s3c->updatejobstatus(
-          iv_accountid = av_account_id
           iv_jobid = lv_job_id
           iv_requestedjobstatus = 'Cancelled'
         ).
@@ -771,7 +750,6 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
 
     WHILE lv_wait_count < lv_max_waits.
       lo_describe_result = ao_s3c->describejob(
-        iv_accountid = av_account_id
         iv_jobid = iv_job_id
       ).
 
@@ -805,7 +783,6 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
     lv_report_bucket = |arn:aws:s3:::{ av_bucket_name }|.
 
     rv_job_id = ao_s3c_actions->create_job(
-      iv_account_id = av_account_id
       iv_role_arn = av_role_arn
       iv_manifest_location = lv_manifest_location
       iv_manifest_etag = av_manifest_etag
