@@ -215,7 +215,7 @@ allow_list:
   - "EnablePropagateAdditionalUserContextData"
   - "StopQueryWorkloadInsightsTopContributors"
   - "com/location/latest/APIReference/Welcome"
-  - "LargeQuery/Actions/CloudWatchLogsWrapper"
+  - "1234567890123456789012345678901234567890"
 sample_files:
   - "README.md"
   - "chat_sfn_state_machine.json"
