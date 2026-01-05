@@ -77,7 +77,9 @@ CLASS /awsex/cl_ec2_actions DEFINITION
         /aws1/cx_rt_generic .
     METHODS monitor_instance
       IMPORTING
-        !iv_instance_id TYPE /aws1/ec2instanceid
+        !iv_instance_id  TYPE /aws1/ec2instanceid
+      RETURNING
+        VALUE(oo_result) TYPE REF TO /aws1/cl_ec2monitorinstsresult
       RAISING
         /aws1/cx_rt_generic .
     METHODS reboot_instance
@@ -499,7 +501,7 @@ CLASS /AWSEX/CL_EC2_ACTIONS IMPLEMENTATION.
         IF lo_exception->av_err_code = 'DryRunOperation'.
           MESSAGE 'Dry run to enable detailed monitoring completed.' TYPE 'I'.
           " DryRun is set to false to enable detailed monitoring. "
-          lo_ec2->monitorinstances(
+          oo_result = lo_ec2->monitorinstances(                      " oo_result is returned for testing purposes. "
             it_instanceids = lt_instance_ids
             iv_dryrun = abap_false ).
           MESSAGE 'Detailed monitoring enabled.' TYPE 'I'.

@@ -35,6 +35,7 @@ CLASS ltc_awsex_cl_ec2_actions DEFINITION FOR TESTING DURATION LONG RISK LEVEL D
       " VPC tests
       create_vpc FOR TESTING RAISING /aws1/cx_rt_generic,
       delete_vpc FOR TESTING RAISING /aws1/cx_rt_generic,
+      vpc_endpoint_operations FOR TESTING RAISING /aws1/cx_rt_generic,
       " Instance tests - lightweight
       create_instance FOR TESTING RAISING /aws1/cx_rt_generic,
       terminate_instances FOR TESTING RAISING /aws1/cx_rt_generic,
@@ -191,10 +192,32 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD describe_addresses.
+    " Allocate an address first to ensure we have at least one to describe
+    DATA(lv_allocation_id) = ao_ec2->allocateaddress( iv_domain = 'vpc' )->get_allocationid( ).
+    
+    " Now describe addresses and verify we can find the one we just allocated
     DATA(lo_result) = ao_ec2_actions->describe_addresses( ).
-    cl_abap_unit_assert=>assert_bound(
-      act = lo_result
-      msg = |Failed to retrieve addresses| ).
+    DATA(lt_addresses) = lo_result->get_addresses( ).
+    
+    " Verify we got addresses back and that our allocated address is in the list
+    cl_abap_unit_assert=>assert_not_initial(
+      act = lt_addresses
+      msg = |Failed to retrieve any addresses| ).
+    
+    DATA(lv_found) = abap_false.
+    LOOP AT lt_addresses INTO DATA(lo_address).
+      IF lo_address->get_allocationid( ) = lv_allocation_id.
+        lv_found = abap_true.
+        EXIT.
+      ENDIF.
+    ENDLOOP.
+    
+    cl_abap_unit_assert=>assert_true(
+      act = lv_found
+      msg = |Allocated address { lv_allocation_id } should be in described addresses| ).
+    
+    " Clean up
+    ao_ec2->releaseaddress( iv_allocationid = lv_allocation_id ).
   ENDMETHOD.
 
   METHOD release_address.
@@ -482,12 +505,75 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
       msg = |Instance should be in terminating instances list| ).
   ENDMETHOD.
 
+  METHOD vpc_endpoint_operations.
+    " Test create_vpc_endpoint and delete_vpc_endpoints without needing EC2 instances
+    DATA(lo_route_tables) = ao_ec2->describeroutetables(
+      it_filters = VALUE /aws1/cl_ec2filter=>tt_filterlist(
+        ( NEW /aws1/cl_ec2filter(
+            iv_name = 'vpc-id'
+            it_values = VALUE /aws1/cl_ec2valuestringlist_w=>tt_valuestringlist(
+              ( NEW /aws1/cl_ec2valuestringlist_w( av_vpc_id ) )
+            )
+        ) )
+      ) ).
+    READ TABLE lo_route_tables->get_routetables( ) INTO DATA(lo_route_table) INDEX 1.
+    cl_abap_unit_assert=>assert_bound(
+      act = lo_route_table
+      msg = |Route table should exist for VPC| ).
+    DATA(lv_route_table_id) = lo_route_table->get_routetableid( ).
+    DATA(lv_region) = ao_session->get_region( ).
+    DATA(lv_service_name) = |com.amazonaws.{ lv_region }.s3|.
+    
+    " Create VPC endpoint
+    DATA(lo_vpc_endpoint_result) = ao_ec2_actions->create_vpc_endpoint(
+      iv_vpc_id = av_vpc_id
+      iv_service_name = lv_service_name
+      it_route_table_ids = VALUE /aws1/cl_ec2vpcendptroutetbl00=>tt_vpcendpointroutetableidlist(
+        ( NEW /aws1/cl_ec2vpcendptroutetbl00( lv_route_table_id ) )
+      ) ).
+    cl_abap_unit_assert=>assert_not_initial(
+      act = lo_vpc_endpoint_result->get_vpcendpoint( )->get_vpcendpointid( )
+      msg = |VPC endpoint should be created| ).
+    DATA(lv_vpc_endpoint_id) = lo_vpc_endpoint_result->get_vpcendpoint( )->get_vpcendpointid( ).
+    
+    " Delete VPC endpoint
+    ao_ec2_actions->delete_vpc_endpoints(
+      VALUE /aws1/cl_ec2vpcendptidlist_w=>tt_vpcendpointidlist(
+        ( NEW /aws1/cl_ec2vpcendptidlist_w( lv_vpc_endpoint_id ) )
+      ) ).
+    
+    " Verify deletion by checking if endpoint still exists
+    DATA(lv_endpoint_deleted) = abap_true.
+    TRY.
+        DATA(lo_describe_endpoints) = ao_ec2->describevpcendpoints(
+          it_vpcendpointids = VALUE /aws1/cl_ec2vpcendptidlist_w=>tt_vpcendpointidlist(
+            ( NEW /aws1/cl_ec2vpcendptidlist_w( lv_vpc_endpoint_id ) )
+          ) ).
+        " If we get here, check the status
+        READ TABLE lo_describe_endpoints->get_vpcendpoints( ) INTO DATA(lo_endpoint) INDEX 1.
+        IF lo_endpoint IS BOUND.
+          DATA(lv_state) = lo_endpoint->get_state( ).
+          IF lv_state <> 'deleted' AND lv_state <> 'deleting'.
+            lv_endpoint_deleted = abap_false.
+          ENDIF.
+        ENDIF.
+      CATCH /aws1/cx_rt_generic.
+        " Endpoint not found - this is expected after deletion
+        lv_endpoint_deleted = abap_true.
+    ENDTRY.
+    cl_abap_unit_assert=>assert_true(
+      act = lv_endpoint_deleted
+      msg = |VPC endpoint should be deleted or deleting| ).
+  ENDMETHOD.
+
   METHOD instance_lifecycle.
-    " Consolidated test covering: start_instance, stop_instance, reboot_instance, monitor_instance
-    " associate_address, disassociate_address, create_vpc_endpoint, delete_vpc_endpoints
+    " Consolidated test covering: start_instance, stop_instance, reboot_instance, monitor_instance, associate_address, disassociate_address
     
     DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
     DATA(lv_tag_value) = |{ /awsex/cl_utils=>cv_asset_prefix }-lifecycle-{ lv_uuid }|.
+    DATA lv_igw_id TYPE /aws1/ec2internetgatewayid.
+    DATA lv_allocation_id TYPE /aws1/ec2allocationid.
+    DATA lv_igw_attached TYPE abap_bool VALUE abap_false.
     
     " Create instance for lifecycle testing
     DATA(lo_create_result) = ao_ec2->runinstances(
@@ -518,13 +604,22 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
       cl_abap_unit_assert=>fail( msg = |Instance { lv_instance_id } did not reach running state. Current state: { lv_status }| ).
     ENDIF.
     
-    " Test monitor_instance
-    TRY.
-        ao_ec2_actions->monitor_instance( lv_instance_id ).
-        WAIT UP TO 3 SECONDS.
-      CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
-        MESSAGE |Monitor instance failed but continuing: { lo_ex->get_text( ) }| TYPE 'I'.
-    ENDTRY.
+    " Test monitor_instance and verify monitoring status
+    DATA(lo_monitor_result) = ao_ec2_actions->monitor_instance( lv_instance_id ).
+    cl_abap_unit_assert=>assert_bound(
+      act = lo_monitor_result
+      msg = |Monitor instance should return a result| ).
+    
+    " Verify monitoring is enabled
+    READ TABLE lo_monitor_result->get_instancemonitorings( ) INTO DATA(lo_monitoring) INDEX 1.
+    cl_abap_unit_assert=>assert_bound(
+      act = lo_monitoring
+      msg = |Monitoring information should be available| ).
+    DATA(lv_monitoring_state) = lo_monitoring->get_monitoring( )->get_state( ).
+    cl_abap_unit_assert=>assert_that(
+      act = lv_monitoring_state
+      exp = cl_abap_unit_assert=>containing( 'enabled' ) OR cl_abap_unit_assert=>containing( 'pending' )
+      msg = |Monitoring state should be enabled or pending, got: { lv_monitoring_state }| ).
     
     " Test stop_instance
     DATA(lo_stop_result) = ao_ec2_actions->stop_instance( lv_instance_id ).
@@ -543,63 +638,79 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
     ENDIF.
     
     " Test reboot_instance
-    TRY.
-        ao_ec2_actions->reboot_instance( lv_instance_id ).
-        WAIT UP TO 10 SECONDS.
-        lv_status = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'running' ).
-        IF lv_status <> 'running'.
-          MESSAGE |Reboot test: Instance state is { lv_status } instead of running| TYPE 'I'.
-        ENDIF.
-      CATCH /aws1/cx_rt_generic INTO lo_ex.
-        MESSAGE |Reboot instance failed but continuing: { lo_ex->get_text( ) }| TYPE 'I'.
-    ENDTRY.
+    ao_ec2_actions->reboot_instance( lv_instance_id ).
+    WAIT UP TO 10 SECONDS.
+    lv_status = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'running' ).
+    IF lv_status <> 'running'.
+      cl_abap_unit_assert=>fail( msg = |Instance should be running after reboot but is: { lv_status }| ).
+    ENDIF.
     
     " Test associate_address and disassociate_address
     TRY.
-        DATA(lv_igw_id) = ao_ec2->createinternetgateway( )->get_internetgateway( )->get_internetgatewayid( ).
-        ao_ec2->attachinternetgateway( iv_internetgatewayid = lv_igw_id iv_vpcid = av_vpc_id ).
-        DATA(lv_allocation_id) = ao_ec2->allocateaddress( iv_domain = 'vpc' )->get_allocationid( ).
-        DATA(lo_assoc_result) = ao_ec2_actions->associate_address(
-            iv_instance_id = lv_instance_id
-            iv_allocation_id = lv_allocation_id ).
-        cl_abap_unit_assert=>assert_not_initial( act = lo_assoc_result->get_associationid( ) msg = |Address should be associated| ).
-        ao_ec2_actions->disassociate_address( lo_assoc_result->get_associationid( ) ).
-        ao_ec2->releaseaddress( iv_allocationid = lv_allocation_id ).
-        ao_ec2->detachinternetgateway( iv_internetgatewayid = lv_igw_id iv_vpcid = av_vpc_id ).
-        ao_ec2->deleteinternetgateway( iv_internetgatewayid = lv_igw_id ).
-      CATCH /aws1/cx_rt_generic INTO lo_ex.
-        MESSAGE |Address operations failed but continuing: { lo_ex->get_text( ) }| TYPE 'I'.
-    ENDTRY.
-    
-    " Test create_vpc_endpoint and delete_vpc_endpoints
-    TRY.
-        DATA(lo_route_tables) = ao_ec2->describeroutetables(
+        " Check if VPC already has an internet gateway
+        DATA(lo_existing_igws) = ao_ec2->describeinternetgateways(
           it_filters = VALUE /aws1/cl_ec2filter=>tt_filterlist(
             ( NEW /aws1/cl_ec2filter(
-                iv_name = 'vpc-id'
+                iv_name = 'attachment.vpc-id'
                 it_values = VALUE /aws1/cl_ec2valuestringlist_w=>tt_valuestringlist(
                   ( NEW /aws1/cl_ec2valuestringlist_w( av_vpc_id ) )
                 )
             ) )
           ) ).
-        READ TABLE lo_route_tables->get_routetables( ) INTO DATA(lo_route_table) INDEX 1.
-        DATA(lv_route_table_id) = lo_route_table->get_routetableid( ).
-        DATA(lv_region) = ao_session->get_region( ).
-        DATA(lv_service_name) = |com.amazonaws.{ lv_region }.s3|.
-        DATA(lo_vpc_endpoint_result) = ao_ec2_actions->create_vpc_endpoint(
-          iv_vpc_id = av_vpc_id
-          iv_service_name = lv_service_name
-          it_route_table_ids = VALUE /aws1/cl_ec2vpcendptroutetbl00=>tt_vpcendpointroutetableidlist(
-            ( NEW /aws1/cl_ec2vpcendptroutetbl00( lv_route_table_id ) )
-          ) ).
-        cl_abap_unit_assert=>assert_not_initial( act = lo_vpc_endpoint_result->get_vpcendpoint( )->get_vpcendpointid( ) msg = |VPC endpoint should be created| ).
-        DATA(lv_vpc_endpoint_id) = lo_vpc_endpoint_result->get_vpcendpoint( )->get_vpcendpointid( ).
-        ao_ec2_actions->delete_vpc_endpoints(
-          VALUE /aws1/cl_ec2vpcendptidlist_w=>tt_vpcendpointidlist(
-            ( NEW /aws1/cl_ec2vpcendptidlist_w( lv_vpc_endpoint_id ) )
-          ) ).
-      CATCH /aws1/cx_rt_generic INTO lo_ex.
-        MESSAGE |VPC endpoint operations failed but continuing: { lo_ex->get_text( ) }| TYPE 'I'.
+        
+        IF lo_existing_igws->get_internetgateways( ) IS INITIAL.
+          " No existing IGW, create and attach one
+          lv_igw_id = ao_ec2->createinternetgateway( )->get_internetgateway( )->get_internetgatewayid( ).
+          ao_ec2->attachinternetgateway( iv_internetgatewayid = lv_igw_id iv_vpcid = av_vpc_id ).
+          lv_igw_attached = abap_true.
+        ELSE.
+          " Use existing IGW
+          READ TABLE lo_existing_igws->get_internetgateways( ) INTO DATA(lo_igw) INDEX 1.
+          lv_igw_id = lo_igw->get_internetgatewayid( ).
+        ENDIF.
+        
+        " Allocate Elastic IP
+        lv_allocation_id = ao_ec2->allocateaddress( iv_domain = 'vpc' )->get_allocationid( ).
+        
+        " Associate address
+        DATA(lo_assoc_result) = ao_ec2_actions->associate_address(
+            iv_instance_id = lv_instance_id
+            iv_allocation_id = lv_allocation_id ).
+        cl_abap_unit_assert=>assert_not_initial(
+          act = lo_assoc_result->get_associationid( )
+          msg = |Address should be associated| ).
+        
+        " Disassociate address
+        ao_ec2_actions->disassociate_address( lo_assoc_result->get_associationid( ) ).
+        
+        " Release address
+        ao_ec2->releaseaddress( iv_allocationid = lv_allocation_id ).
+        CLEAR lv_allocation_id.
+        
+        " Clean up IGW if we created it
+        IF lv_igw_attached = abap_true.
+          ao_ec2->detachinternetgateway( iv_internetgatewayid = lv_igw_id iv_vpcid = av_vpc_id ).
+          ao_ec2->deleteinternetgateway( iv_internetgatewid = lv_igw_id ).
+          CLEAR lv_igw_id.
+        ENDIF.
+        
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
+        " Clean up on error
+        IF lv_allocation_id IS NOT INITIAL.
+          TRY.
+              ao_ec2->releaseaddress( iv_allocationid = lv_allocation_id ).
+            CATCH /aws1/cx_rt_generic.
+          ENDTRY.
+        ENDIF.
+        IF lv_igw_attached = abap_true AND lv_igw_id IS NOT INITIAL.
+          TRY.
+              ao_ec2->detachinternetgateway( iv_internetgatewayid = lv_igw_id iv_vpcid = av_vpc_id ).
+              ao_ec2->deleteinternetgateway( iv_internetgatewayid = lv_igw_id ).
+            CATCH /aws1/cx_rt_generic.
+          ENDTRY.
+        ENDIF.
+        " Re-raise the exception to fail the test
+        cl_abap_unit_assert=>fail( msg = |Address operations failed: { lo_ex->get_text( ) }| ).
     ENDTRY.
   ENDMETHOD.
 
