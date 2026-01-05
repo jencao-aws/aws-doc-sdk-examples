@@ -192,10 +192,10 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD describe_addresses.
-    " Allocate an address first to ensure we have at least one to describe
+    " Allocate an address to the VPC first
     DATA(lv_allocation_id) = ao_ec2->allocateaddress( iv_domain = 'vpc' )->get_allocationid( ).
     
-    " Now describe addresses and verify we can find the one we just allocated
+    " Now call describe_addresses() method to verify it returns the allocated address
     DATA(lo_result) = ao_ec2_actions->describe_addresses( ).
     DATA(lt_addresses) = lo_result->get_addresses( ).
     
@@ -567,8 +567,8 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD instance_lifecycle.
-    " Simplified lifecycle test covering: stop, start, monitor operations
-    " Note: Reboot and address operations removed to reduce test duration
+    " Consolidated lifecycle test for instance-related operations
+    " Covers: monitor, stop, start, reboot, associate_address, disassociate_address
     
     DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
     DATA(lv_tag_value) = |{ /awsex/cl_utils=>cv_asset_prefix }-lifecycle-{ lv_uuid }|.
@@ -596,86 +596,38 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
     
     " Wait for instance to reach running state
     DATA(lv_status) = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'running' ).
-    
-    " Accept 'running' or 'pending' as valid initial states
     IF lv_status <> 'running' AND lv_status <> 'pending'.
       cl_abap_unit_assert=>fail( msg = |Instance { lv_instance_id } did not reach running/pending state. Current state: { lv_status }| ).
     ENDIF.
     
-    " Test monitor_instance and verify monitoring status
+    " Test monitor_instance - verify monitoring status is enabled
     DATA(lo_monitor_result) = ao_ec2_actions->monitor_instance( lv_instance_id ).
     cl_abap_unit_assert=>assert_bound(
       act = lo_monitor_result
-      msg = |Monitor instance should return a result| ).
+      msg = |Monitor instance operation failed| ).
     
-    " Verify monitoring is enabled
+    " Verify monitoring is enabled by checking the monitoring status
     READ TABLE lo_monitor_result->get_instancemonitorings( ) INTO DATA(lo_monitoring) INDEX 1.
     cl_abap_unit_assert=>assert_bound(
       act = lo_monitoring
       msg = |Monitoring information should be available| ).
     DATA(lv_monitoring_state) = lo_monitoring->get_monitoring( )->get_state( ).
-    " Check if monitoring state is enabled or pending
     IF lv_monitoring_state <> 'enabled' AND lv_monitoring_state <> 'pending'.
-      cl_abap_unit_assert=>fail( msg = |Monitoring state should be enabled or pending, got: { lv_monitoring_state }| ).
+      cl_abap_unit_assert=>fail( msg = |Monitoring status should be enabled or pending, got: { lv_monitoring_state }| ).
     ENDIF.
     
-    " Test stop_instance
-    DATA(lo_stop_result) = ao_ec2_actions->stop_instance( lv_instance_id ).
-    cl_abap_unit_assert=>assert_not_initial( act = lo_stop_result msg = |Stop instance should return result| ).
-    
-    " Wait for instance to be fully stopped (with extended retry for stopping state)
-    DATA lv_stop_retry TYPE i VALUE 0.
-    DO 3 TIMES.
-      lv_status = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'stopped' ).
-      IF lv_status = 'stopped'.
-        EXIT.
-      ELSEIF lv_status = 'stopping'.
-        " Still stopping, wait longer and retry
-        lv_stop_retry = lv_stop_retry + 1.
-        WAIT UP TO 15 SECONDS.
-      ELSE.
-        " Unexpected state
-        cl_abap_unit_assert=>fail( msg = |Instance in unexpected state during stop: { lv_status }| ).
-      ENDIF.
-    ENDDO.
-    
-    " Final check - must be stopped
-    IF lv_status <> 'stopped'.
-      cl_abap_unit_assert=>fail( msg = |Instance should be stopped but is: { lv_status } after { lv_stop_retry } retries| ).
-    ENDIF.
-    
-    " Test start_instance
-    DATA(lo_start_result) = ao_ec2_actions->start_instance( lv_instance_id ).
-    cl_abap_unit_assert=>assert_not_initial( act = lo_start_result msg = |Start instance should return result| ).
-    
-    " Wait for instance to be running (with extended retry for pending state)
-    DATA lv_start_retry TYPE i VALUE 0.
-    DO 3 TIMES.
-      lv_status = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'running' ).
-      IF lv_status = 'running'.
-        EXIT.
-      ELSEIF lv_status = 'pending'.
-        " Still pending, wait longer and retry
-        lv_start_retry = lv_start_retry + 1.
-        WAIT UP TO 15 SECONDS.
-      ELSE.
-        " Unexpected state
-        cl_abap_unit_assert=>fail( msg = |Instance in unexpected state during start: { lv_status }| ).
-      ENDIF.
-    ENDDO.
-    
-    " Accept running or pending (if still pending after retries, that's acceptable)
-    IF lv_status <> 'running' AND lv_status <> 'pending'.
-      cl_abap_unit_assert=>fail( msg = |Instance should be running or pending but is: { lv_status } after { lv_start_retry } retries| ).
-    ENDIF.
-    
-    " Test reboot_instance (simplified without extensive waiting)
+    " Test reboot_instance - verify the operation succeeds
     ao_ec2_actions->reboot_instance( lv_instance_id ).
-    " Just verify the call succeeded, don't wait for full reboot cycle
+    " Wait for instance to stabilize after reboot
+    WAIT UP TO 5 SECONDS.
     
-    " Test associate_address and disassociate_address (simplified)
+    " Test associate_address and disassociate_address
+    DATA lv_igw_id TYPE /aws1/ec2internetgatewayid.
+    DATA lv_igw_attached TYPE abap_bool VALUE abap_false.
+    DATA lv_allocation_id TYPE /aws1/ec2allocationid.
+    
     TRY.
-        " Check if VPC already has an internet gateway
+        " Check if VPC already has an internet gateway attached
         DATA(lo_existing_igws) = ao_ec2->describeinternetgateways(
           it_filters = VALUE /aws1/cl_ec2filter=>tt_filterlist(
             ( NEW /aws1/cl_ec2filter(
@@ -685,9 +637,6 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
                 )
             ) )
           ) ).
-        
-        DATA lv_igw_id TYPE /aws1/ec2internetgatewayid.
-        DATA lv_igw_attached TYPE abap_bool VALUE abap_false.
         
         IF lo_existing_igws->get_internetgateways( ) IS INITIAL.
           " No existing IGW, create and attach one
@@ -701,17 +650,17 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
         ENDIF.
         
         " Allocate Elastic IP
-        DATA(lv_allocation_id) = ao_ec2->allocateaddress( iv_domain = 'vpc' )->get_allocationid( ).
+        lv_allocation_id = ao_ec2->allocateaddress( iv_domain = 'vpc' )->get_allocationid( ).
         
-        " Associate address
+        " Associate address - verify operation succeeds
         DATA(lo_assoc_result) = ao_ec2_actions->associate_address(
             iv_instance_id = lv_instance_id
             iv_allocation_id = lv_allocation_id ).
         cl_abap_unit_assert=>assert_not_initial(
           act = lo_assoc_result->get_associationid( )
-          msg = |Address should be associated| ).
+          msg = |Associate address operation failed| ).
         
-        " Disassociate address
+        " Disassociate address - verify operation succeeds
         ao_ec2_actions->disassociate_address( lo_assoc_result->get_associationid( ) ).
         
         " Release address
@@ -738,9 +687,57 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
             ENDIF.
           CATCH /aws1/cx_rt_generic.
         ENDTRY.
-        " Re-raise the exception to fail the test
-        cl_abap_unit_assert=>fail( msg = |Address operations failed: { lo_ex->get_text( ) }| ).
+        " Fail the test with error details
+        cl_abap_unit_assert=>fail( msg = |Instance lifecycle operations failed: { lo_ex->get_text( ) }| ).
     ENDTRY.
+    
+    " Test stop_instance - verify operation succeeds
+    DATA(lo_stop_result) = ao_ec2_actions->stop_instance( lv_instance_id ).
+    cl_abap_unit_assert=>assert_not_initial( 
+      act = lo_stop_result 
+      msg = |Stop instance operation failed| ).
+    
+    " Wait for instance to be fully stopped
+    DATA lv_stop_retry TYPE i VALUE 0.
+    DO 3 TIMES.
+      lv_status = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'stopped' ).
+      IF lv_status = 'stopped'.
+        EXIT.
+      ELSEIF lv_status = 'stopping'.
+        lv_stop_retry = lv_stop_retry + 1.
+        WAIT UP TO 15 SECONDS.
+      ELSE.
+        cl_abap_unit_assert=>fail( msg = |Instance in unexpected state during stop: { lv_status }| ).
+      ENDIF.
+    ENDDO.
+    
+    IF lv_status <> 'stopped'.
+      cl_abap_unit_assert=>fail( msg = |Instance should be stopped but is: { lv_status } after { lv_stop_retry } retries| ).
+    ENDIF.
+    
+    " Test start_instance - verify operation succeeds
+    DATA(lo_start_result) = ao_ec2_actions->start_instance( lv_instance_id ).
+    cl_abap_unit_assert=>assert_not_initial( 
+      act = lo_start_result 
+      msg = |Start instance operation failed| ).
+    
+    " Wait for instance to be running
+    DATA lv_start_retry TYPE i VALUE 0.
+    DO 3 TIMES.
+      lv_status = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'running' ).
+      IF lv_status = 'running'.
+        EXIT.
+      ELSEIF lv_status = 'pending'.
+        lv_start_retry = lv_start_retry + 1.
+        WAIT UP TO 15 SECONDS.
+      ELSE.
+        cl_abap_unit_assert=>fail( msg = |Instance in unexpected state during start: { lv_status }| ).
+      ENDIF.
+    ENDDO.
+    
+    IF lv_status <> 'running' AND lv_status <> 'pending'.
+      cl_abap_unit_assert=>fail( msg = |Instance should be running or pending but is: { lv_status } after { lv_start_retry } retries| ).
+    ENDIF.
   ENDMETHOD.
 
   METHOD get_ami_id.
