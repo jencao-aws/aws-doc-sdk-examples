@@ -616,10 +616,10 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
       act = lo_monitoring
       msg = |Monitoring information should be available| ).
     DATA(lv_monitoring_state) = lo_monitoring->get_monitoring( )->get_state( ).
-    cl_abap_unit_assert=>assert_that(
-      act = lv_monitoring_state
-      exp = cl_abap_unit_assert=>containing( 'enabled' ) OR cl_abap_unit_assert=>containing( 'pending' )
-      msg = |Monitoring state should be enabled or pending, got: { lv_monitoring_state }| ).
+    " Check if monitoring state is enabled or pending
+    IF lv_monitoring_state <> 'enabled' AND lv_monitoring_state <> 'pending'.
+      cl_abap_unit_assert=>fail( msg = |Monitoring state should be enabled or pending, got: { lv_monitoring_state }| ).
+    ENDIF.
     
     " Test stop_instance
     DATA(lo_stop_result) = ao_ec2_actions->stop_instance( lv_instance_id ).
@@ -690,7 +690,7 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
         " Clean up IGW if we created it
         IF lv_igw_attached = abap_true.
           ao_ec2->detachinternetgateway( iv_internetgatewayid = lv_igw_id iv_vpcid = av_vpc_id ).
-          ao_ec2->deleteinternetgateway( iv_internetgatewid = lv_igw_id ).
+          ao_ec2->deleteinternetgateway( iv_internetgatewayid = lv_igw_id ).
           CLEAR lv_igw_id.
         ENDIF.
         
