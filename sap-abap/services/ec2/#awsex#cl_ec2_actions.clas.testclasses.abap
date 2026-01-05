@@ -696,11 +696,19 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
       act = lo_stop_result 
       msg = |Stop instance operation failed| ).
     
-    " Wait for instance to be stopped - single wait with relaxed validation
+    " Must wait for instance to be fully stopped before starting
+    " Cannot start an instance that is still stopping
     lv_status = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'stopped' ).
-    " Accept stopped or stopping as valid states
-    IF lv_status <> 'stopped' AND lv_status <> 'stopping'.
-      cl_abap_unit_assert=>fail( msg = |Instance should be stopped or stopping but is: { lv_status }| ).
+    
+    " If not stopped after wait, try one more time with longer wait
+    IF lv_status = 'stopping'.
+      WAIT UP TO 10 SECONDS.
+      lv_status = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'stopped' ).
+    ENDIF.
+    
+    " Instance must be stopped to proceed with start test
+    IF lv_status <> 'stopped'.
+      cl_abap_unit_assert=>fail( msg = |Instance must be stopped before starting but is: { lv_status }| ).
     ENDIF.
     
     " Test start_instance - verify operation succeeds
@@ -709,7 +717,7 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
       act = lo_start_result 
       msg = |Start instance operation failed| ).
     
-    " Wait for instance to be running - single wait with relaxed validation
+    " Wait for instance to be running - accept pending/running
     lv_status = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'running' ).
     " Accept running or pending as valid states  
     IF lv_status <> 'running' AND lv_status <> 'pending'.
