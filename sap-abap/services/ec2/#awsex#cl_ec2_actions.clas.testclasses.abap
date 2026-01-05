@@ -622,37 +622,51 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
     " Test stop_instance
     DATA(lo_stop_result) = ao_ec2_actions->stop_instance( lv_instance_id ).
     cl_abap_unit_assert=>assert_not_initial( act = lo_stop_result msg = |Stop instance should return result| ).
-    lv_status = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'stopped' ).
-    " Must be fully stopped before we can start it again
+    
+    " Wait for instance to be fully stopped (with extended retry for stopping state)
+    DATA lv_stop_retry TYPE i VALUE 0.
+    DO 3 TIMES.
+      lv_status = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'stopped' ).
+      IF lv_status = 'stopped'.
+        EXIT.
+      ELSEIF lv_status = 'stopping'.
+        " Still stopping, wait longer and retry
+        lv_stop_retry = lv_stop_retry + 1.
+        WAIT UP TO 15 SECONDS.
+      ELSE.
+        " Unexpected state
+        cl_abap_unit_assert=>fail( msg = |Instance in unexpected state during stop: { lv_status }| ).
+      ENDIF.
+    ENDDO.
+    
+    " Final check - must be stopped
     IF lv_status <> 'stopped'.
-      " If still stopping, wait a bit more for it to fully stop
-      IF lv_status = 'stopping'.
-        WAIT UP TO 10 SECONDS.
-        lv_status = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'stopped' ).
-      ENDIF.
-      " Now check if it's stopped
-      IF lv_status <> 'stopped'.
-        cl_abap_unit_assert=>fail( msg = |Instance should be stopped but is: { lv_status }| ).
-      ENDIF.
+      cl_abap_unit_assert=>fail( msg = |Instance should be stopped but is: { lv_status } after { lv_stop_retry } retries| ).
     ENDIF.
     
     " Test start_instance
     DATA(lo_start_result) = ao_ec2_actions->start_instance( lv_instance_id ).
     cl_abap_unit_assert=>assert_not_initial( act = lo_start_result msg = |Start instance should return result| ).
-    lv_status = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'running' ).
-    " Accept 'running' and 'pending' as valid states since starting may take time
-    IF lv_status <> 'running' AND lv_status <> 'pending'.
-      cl_abap_unit_assert=>fail( msg = |Instance should be running or pending but is: { lv_status }| ).
-    ENDIF.
     
-    " If still pending, wait a bit more to ensure it reaches running before reboot
-    IF lv_status = 'pending'.
-      WAIT UP TO 10 SECONDS.
+    " Wait for instance to be running (with extended retry for pending state)
+    DATA lv_start_retry TYPE i VALUE 0.
+    DO 3 TIMES.
       lv_status = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'running' ).
-      " At this point, accept running or pending - if still pending, reboot will handle it
-      IF lv_status <> 'running' AND lv_status <> 'pending'.
-        cl_abap_unit_assert=>fail( msg = |Instance should be running or pending but is: { lv_status }| ).
+      IF lv_status = 'running'.
+        EXIT.
+      ELSEIF lv_status = 'pending'.
+        " Still pending, wait longer and retry
+        lv_start_retry = lv_start_retry + 1.
+        WAIT UP TO 15 SECONDS.
+      ELSE.
+        " Unexpected state
+        cl_abap_unit_assert=>fail( msg = |Instance in unexpected state during start: { lv_status }| ).
       ENDIF.
+    ENDDO.
+    
+    " Accept running or pending (if still pending after retries, that's acceptable)
+    IF lv_status <> 'running' AND lv_status <> 'pending'.
+      cl_abap_unit_assert=>fail( msg = |Instance should be running or pending but is: { lv_status } after { lv_start_retry } retries| ).
     ENDIF.
     
     " Test reboot_instance (simplified without extensive waiting)
