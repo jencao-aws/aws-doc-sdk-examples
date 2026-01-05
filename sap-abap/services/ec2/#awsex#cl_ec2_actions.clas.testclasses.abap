@@ -697,10 +697,10 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
       msg = |Stop instance operation failed| ).
     
     " Must wait for instance to be fully stopped before starting
-    " Cannot start an instance that is still stopping
-    " Use multiple retry attempts as stopping can take variable time
+    " EC2 instances can take significant time to stop (up to 5+ minutes in some cases)
+    " Use extended retry logic with longer waits
     DATA lv_stop_attempts TYPE i VALUE 0.
-    DO 4 TIMES.
+    DO 6 TIMES.
       lv_status = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'stopped' ).
       
       IF lv_status = 'stopped'.
@@ -709,8 +709,13 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
       ELSEIF lv_status = 'stopping'.
         " Still stopping, wait and retry
         lv_stop_attempts = lv_stop_attempts + 1.
-        IF lv_stop_attempts < 4.
-          WAIT UP TO 15 SECONDS.
+        IF lv_stop_attempts < 6.
+          " Progressive wait: start with 10s, increase to 20s for later attempts
+          IF lv_stop_attempts <= 2.
+            WAIT UP TO 10 SECONDS.
+          ELSE.
+            WAIT UP TO 20 SECONDS.
+          ENDIF.
         ENDIF.
       ELSE.
         " Unexpected state
@@ -720,7 +725,7 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
     
     " Instance must be stopped to proceed with start test
     IF lv_status <> 'stopped'.
-      cl_abap_unit_assert=>fail( msg = |Instance must be stopped before starting but is: { lv_status } after { lv_stop_attempts } retries| ).
+      cl_abap_unit_assert=>fail( msg = |Instance must be stopped before starting but is: { lv_status } after { lv_stop_attempts } retries. Instance may require more time or manual intervention.| ).
     ENDIF.
     
     " Test start_instance - verify operation succeeds
