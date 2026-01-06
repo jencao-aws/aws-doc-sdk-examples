@@ -1,5 +1,4 @@
 " Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
-" Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 " SPDX-License-Identifier: Apache-2.0
 CLASS ltc_awsex_cl_ec2_actions DEFINITION DEFERRED.
 CLASS /awsex/cl_ec2_actions DEFINITION LOCAL FRIENDS ltc_awsex_cl_ec2_actions.
@@ -39,8 +38,8 @@ CLASS ltc_awsex_cl_ec2_actions DEFINITION FOR TESTING DURATION LONG RISK LEVEL D
       vpc_endpoint_operations FOR TESTING RAISING /aws1/cx_rt_generic,
       " Instance tests - lightweight
       create_instance FOR TESTING RAISING /aws1/cx_rt_generic,
-      " Consolidated lifecycle tests
-      instance_state_management FOR TESTING RAISING /aws1/cx_rt_generic,
+      " Consolidated lifecycle tests - split for Lambda timeout management
+      instance_lifecycle_ops FOR TESTING RAISING /aws1/cx_rt_generic,
       mon_and_addr_management FOR TESTING RAISING /aws1/cx_rt_generic.
 
     CLASS-METHODS class_setup RAISING /aws1/cx_rt_generic.
@@ -473,12 +472,14 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
     ENDTRY.
   ENDMETHOD.
 
-  METHOD instance_state_management.
-    " Consolidated test for instance lifecycle: create → stop → start → reboot → terminate
+  METHOD instance_lifecycle_ops.
+    " Consolidated test for instance lifecycle operations
+    " Tests: stop → start → reboot → terminate
+    " Uses DescribeInstanceStatus for more efficient state checking
     DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
-    DATA(lv_tag_value) = |{ /awsex/cl_utils=>cv_asset_prefix }-state-{ lv_uuid }|.
+    DATA(lv_tag_value) = |{ /awsex/cl_utils=>cv_asset_prefix }-lifecycle-{ lv_uuid }|.
 
-    " Create instance for state management testing
+    " Create instance for lifecycle testing
     DATA(lo_create_result) = ao_ec2->runinstances(
         iv_imageid = av_ami_id
         iv_instancetype = 't3.micro'
@@ -504,9 +505,7 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
     " Wait for instance to be running
     DATA(lv_status) = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'running' ).
     IF lv_status <> 'running'.
-      " Log error but continue to cleanup
       MESSAGE |Instance did not reach running state: { lv_status }| TYPE 'I'.
-      " Attempt to terminate for cleanup
       TRY.
           ao_ec2->terminateinstances00(
             it_instanceids = VALUE /aws1/cl_ec2instidstringlist_w=>tt_instanceidstringlist(
@@ -528,12 +527,38 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
       exp = lv_instance_id
       msg = |Stopping instance ID should match| ).
 
-    " Wait for instance to be stopped
-    lv_status = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'stopped' ).
-    IF lv_status <> 'stopped'.
-      " Log current state and continue to cleanup
-      MESSAGE |Instance did not reach stopped state: { lv_status }| TYPE 'I'.
-      " Attempt to terminate for cleanup
+    " Use DescribeInstanceStatus for more efficient state checking with longer timeout
+    DATA lv_stopped TYPE abap_bool VALUE abap_false.
+    DATA lv_wait_iterations TYPE i VALUE 0.
+    DO 60 TIMES.
+      lv_wait_iterations = lv_wait_iterations + 1.
+      IF lv_wait_iterations > 1.
+        WAIT UP TO 4 SECONDS.
+      ENDIF.
+      
+      TRY.
+          DATA(lo_status_result) = ao_ec2->describeinstancestatus(
+            it_instanceids = VALUE /aws1/cl_ec2instidstringlist_w=>tt_instanceidstringlist(
+              ( NEW /aws1/cl_ec2instidstringlist_w( lv_instance_id ) )
+            )
+            iv_includeallinstances = abap_true
+          ).
+          
+          IF lo_status_result->get_instancestatuses( ) IS NOT INITIAL.
+            READ TABLE lo_status_result->get_instancestatuses( ) INTO DATA(lo_inst_status) INDEX 1.
+            lv_status = lo_inst_status->get_instancestate( )->get_name( ).
+            IF lv_status = 'stopped'.
+              lv_stopped = abap_true.
+              EXIT.
+            ENDIF.
+          ENDIF.
+        CATCH /aws1/cx_rt_generic.
+          CONTINUE.
+      ENDTRY.
+    ENDDO.
+    
+    IF lv_stopped = abap_false.
+      MESSAGE |Instance did not reach stopped state after { lv_wait_iterations } checks: { lv_status }| TYPE 'I'.
       TRY.
           ao_ec2->terminateinstances00(
             it_instanceids = VALUE /aws1/cl_ec2instidstringlist_w=>tt_instanceidstringlist(
@@ -541,7 +566,7 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
             ) ).
         CATCH /aws1/cx_rt_generic.
       ENDTRY.
-      cl_abap_unit_assert=>fail( msg = |Instance should reach stopped state. Current state: { lv_status }. Instance ID: { lv_instance_id }| ).
+      cl_abap_unit_assert=>fail( msg = |Instance did not stop in time. Last state: { lv_status }| ).
     ENDIF.
 
     " Test start_instance
@@ -558,7 +583,6 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
     " Wait for instance to be running again
     lv_status = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'running' ).
     IF lv_status <> 'running'.
-      " Log error and cleanup
       MESSAGE |Instance did not restart: { lv_status }| TYPE 'I'.
       TRY.
           ao_ec2->terminateinstances00(
@@ -567,21 +591,20 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
             ) ).
         CATCH /aws1/cx_rt_generic.
       ENDTRY.
-      cl_abap_unit_assert=>fail( msg = |Instance should be running again after start. Current state: { lv_status }| ).
+      cl_abap_unit_assert=>fail( msg = |Instance should be running after start. Current state: { lv_status }| ).
     ENDIF.
 
     " Test reboot_instance
     ao_ec2_actions->reboot_instance( lv_instance_id ).
-    " Brief wait after reboot to ensure request is processed
     WAIT UP TO 3 SECONDS.
-    " Verify instance still exists (no need to wait for running state after reboot)
+    " Verify instance exists
     DATA(lo_describe) = ao_ec2->describeinstances(
       it_instanceids = VALUE /aws1/cl_ec2instidstringlist_w=>tt_instanceidstringlist(
         ( NEW /aws1/cl_ec2instidstringlist_w( lv_instance_id ) )
       ) ).
     cl_abap_unit_assert=>assert_not_initial(
       act = lo_describe->get_reservations( )
-      msg = |Instance should still exist after reboot| ).
+      msg = |Instance should exist after reboot| ).
 
     " Test terminate_instances
     DATA(lo_terminate_result) = ao_ec2_actions->terminate_instances(
