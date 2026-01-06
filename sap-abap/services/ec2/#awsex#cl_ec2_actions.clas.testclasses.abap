@@ -504,6 +504,16 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
     " Wait for instance to be running
     DATA(lv_status) = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'running' ).
     IF lv_status <> 'running'.
+      " Log error but continue to cleanup
+      MESSAGE |Instance did not reach running state: { lv_status }| TYPE 'I'.
+      " Attempt to terminate for cleanup
+      TRY.
+          ao_ec2->terminateinstances00(
+            it_instanceids = VALUE /aws1/cl_ec2instidstringlist_w=>tt_instanceidstringlist(
+              ( NEW /aws1/cl_ec2instidstringlist_w( lv_instance_id ) )
+            ) ).
+        CATCH /aws1/cx_rt_generic.
+      ENDTRY.
       cl_abap_unit_assert=>fail( msg = |Instance should reach running state. Current state: { lv_status }| ).
     ENDIF.
 
@@ -518,11 +528,20 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
       exp = lv_instance_id
       msg = |Stopping instance ID should match| ).
 
-    " Wait for instance to be stopped with better error handling
+    " Wait for instance to be stopped
     lv_status = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'stopped' ).
     IF lv_status <> 'stopped'.
-      " Provide detailed error message with current state
-      cl_abap_unit_assert=>fail( msg = |Instance should reach stopped state within timeout. Current state: { lv_status }. Instance ID: { lv_instance_id }| ).
+      " Log current state and continue to cleanup
+      MESSAGE |Instance did not reach stopped state: { lv_status }| TYPE 'I'.
+      " Attempt to terminate for cleanup
+      TRY.
+          ao_ec2->terminateinstances00(
+            it_instanceids = VALUE /aws1/cl_ec2instidstringlist_w=>tt_instanceidstringlist(
+              ( NEW /aws1/cl_ec2instidstringlist_w( lv_instance_id ) )
+            ) ).
+        CATCH /aws1/cx_rt_generic.
+      ENDTRY.
+      cl_abap_unit_assert=>fail( msg = |Instance should reach stopped state. Current state: { lv_status }. Instance ID: { lv_instance_id }| ).
     ENDIF.
 
     " Test start_instance
@@ -539,14 +558,23 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
     " Wait for instance to be running again
     lv_status = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'running' ).
     IF lv_status <> 'running'.
+      " Log error and cleanup
+      MESSAGE |Instance did not restart: { lv_status }| TYPE 'I'.
+      TRY.
+          ao_ec2->terminateinstances00(
+            it_instanceids = VALUE /aws1/cl_ec2instidstringlist_w=>tt_instanceidstringlist(
+              ( NEW /aws1/cl_ec2instidstringlist_w( lv_instance_id ) )
+            ) ).
+        CATCH /aws1/cx_rt_generic.
+      ENDTRY.
       cl_abap_unit_assert=>fail( msg = |Instance should be running again after start. Current state: { lv_status }| ).
     ENDIF.
 
     " Test reboot_instance
     ao_ec2_actions->reboot_instance( lv_instance_id ).
-    " Brief wait after reboot
-    WAIT UP TO 5 SECONDS.
-    " Verify instance still exists
+    " Brief wait after reboot to ensure request is processed
+    WAIT UP TO 3 SECONDS.
+    " Verify instance still exists (no need to wait for running state after reboot)
     DATA(lo_describe) = ao_ec2->describeinstances(
       it_instanceids = VALUE /aws1/cl_ec2instidstringlist_w=>tt_instanceidstringlist(
         ( NEW /aws1/cl_ec2instidstringlist_w( lv_instance_id ) )
@@ -639,8 +667,8 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
           lv_igw_id = ao_ec2->createinternetgateway( )->get_internetgateway( )->get_internetgatewayid( ).
           ao_ec2->attachinternetgateway( iv_internetgatewayid = lv_igw_id iv_vpcid = av_vpc_id ).
           lv_igw_attached = abap_true.
-          " Wait for IGW to be available
-          WAIT UP TO 5 SECONDS.
+          " Brief wait for IGW attachment to complete
+          WAIT UP TO 3 SECONDS.
         ELSE.
           " Use existing IGW
           READ TABLE lo_existing_igws->get_internetgateways( ) INTO DATA(lo_igw) INDEX 1.
@@ -792,17 +820,18 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD wait_for_instance.
-    " Wait for instance to reach desired state with extended timeout
-    " Maximum 100 iterations with 5 second wait = 500 seconds (8+ minutes) max
+    " Wait for instance to reach desired state
+    " Maximum 50 iterations with 4 second wait = 200 seconds (~3 minutes) max
+    " This balances between adequate wait time and Lambda timeout limits
     DATA lv_iterations TYPE i VALUE 0.
-    DATA lv_max_iterations TYPE i VALUE 100.
+    DATA lv_max_iterations TYPE i VALUE 50.
     
     DO lv_max_iterations TIMES.
       lv_iterations = lv_iterations + 1.
       
       " Wait before checking status (skip first iteration)
       IF lv_iterations > 1.
-        WAIT UP TO 5 SECONDS.
+        WAIT UP TO 4 SECONDS.
       ENDIF.
       
       TRY.
