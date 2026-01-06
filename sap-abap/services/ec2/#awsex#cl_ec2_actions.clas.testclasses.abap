@@ -39,12 +39,9 @@ CLASS ltc_awsex_cl_ec2_actions DEFINITION FOR TESTING DURATION LONG RISK LEVEL D
       vpc_endpoint_operations FOR TESTING RAISING /aws1/cx_rt_generic,
       " Instance tests - lightweight
       create_instance FOR TESTING RAISING /aws1/cx_rt_generic,
-      terminate_instances FOR TESTING RAISING /aws1/cx_rt_generic,
-      " Stop and start tested independently to avoid timing issues
-      stop_instance FOR TESTING RAISING /aws1/cx_rt_generic,
-      start_instance FOR TESTING RAISING /aws1/cx_rt_generic,
-      " Consolidated lifecycle test covering multiple operations
-      instance_lifecycle FOR TESTING RAISING /aws1/cx_rt_generic.
+      " Consolidated lifecycle tests
+      instance_state_management FOR TESTING RAISING /aws1/cx_rt_generic,
+      mon_and_addr_management FOR TESTING RAISING /aws1/cx_rt_generic.
 
     CLASS-METHODS class_setup RAISING /aws1/cx_rt_generic.
     CLASS-METHODS class_teardown RAISING /aws1/cx_rt_generic.
@@ -476,44 +473,12 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
     ENDTRY.
   ENDMETHOD.
 
-  METHOD terminate_instances.
+  METHOD instance_state_management.
+    " Consolidated test for instance lifecycle: create → stop → start → reboot → terminate
     DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
-    DATA(lv_tag_value) = |{ /awsex/cl_utils=>cv_asset_prefix }-{ lv_uuid }|.
-    DATA(lo_create_result) = ao_ec2->runinstances(
-        iv_imageid = av_ami_id
-        iv_instancetype = 't3.micro'
-        iv_maxcount = 1
-        iv_mincount = 1
-        iv_subnetid = av_subnet_id
-        it_tagspecifications = VALUE /aws1/cl_ec2tagspecification=>tt_tagspecificationlist(
-          ( NEW /aws1/cl_ec2tagspecification(
-              iv_resourcetype = 'instance'
-              it_tags = VALUE /aws1/cl_ec2tag=>tt_taglist(
-                ( NEW /aws1/cl_ec2tag( iv_key = 'Name' iv_value = lv_tag_value ) )
-                ( NEW /aws1/cl_ec2tag( iv_key = 'convert_test' iv_value = 'true' ) )
-              )
-          ) )
-        )
-    ).
-    READ TABLE lo_create_result->get_instances( ) INTO DATA(lo_instance) INDEX 1.
-    DATA(lv_instance_id) = lo_instance->get_instanceid( ).
-    DATA(lo_result) = ao_ec2_actions->terminate_instances(
-      VALUE /aws1/cl_ec2instidstringlist_w=>tt_instanceidstringlist(
-        ( NEW /aws1/cl_ec2instidstringlist_w( lv_instance_id ) )
-      ) ).
-    READ TABLE lo_result->get_terminatinginstances( ) INTO DATA(lo_terminating_instance) INDEX 1.
-    cl_abap_unit_assert=>assert_equals(
-      act = lo_terminating_instance->get_instanceid( )
-      exp = lv_instance_id
-      msg = |Instance should be in terminating instances list| ).
-  ENDMETHOD.
+    DATA(lv_tag_value) = |{ /awsex/cl_utils=>cv_asset_prefix }-state-{ lv_uuid }|.
 
-  METHOD stop_instance.
-    " Test stop_instance operation independently
-    DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
-    DATA(lv_tag_value) = |{ /awsex/cl_utils=>cv_asset_prefix }-stop-{ lv_uuid }|.
-    
-    " Create instance for stop testing
+    " Create instance for state management testing
     DATA(lo_create_result) = ao_ec2->runinstances(
         iv_imageid = av_ami_id
         iv_instancetype = 't3.micro'
@@ -532,33 +497,84 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
     ).
     READ TABLE lo_create_result->get_instances( ) INTO DATA(lo_instance) INDEX 1.
     DATA(lv_instance_id) = lo_instance->get_instanceid( ).
-    APPEND lv_instance_id TO at_cleanup_instances.
-    
+    cl_abap_unit_assert=>assert_not_initial(
+      act = lv_instance_id
+      msg = |Instance should have been created| ).
+
     " Wait for instance to be running
     DATA(lv_status) = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'running' ).
-    IF lv_status <> 'running' AND lv_status <> 'pending'.
-      cl_abap_unit_assert=>fail( msg = |Instance must be running to test stop| ).
-    ENDIF.
-    
-    " Test stop_instance - just verify the operation is called successfully
+    cl_abap_unit_assert=>assert_equals(
+      act = lv_status
+      exp = 'running'
+      msg = |Instance should reach running state| ).
+
+    " Test stop_instance
     DATA(lo_stop_result) = ao_ec2_actions->stop_instance( lv_instance_id ).
     cl_abap_unit_assert=>assert_not_initial(
       act = lo_stop_result
       msg = |Stop instance operation should return result| ).
-    
-    " Verify the stop was initiated by checking state is stopping or stopped
     READ TABLE lo_stop_result->get_stoppinginstances( ) INTO DATA(lo_stopping) INDEX 1.
-    cl_abap_unit_assert=>assert_bound(
-      act = lo_stopping
-      msg = |Should have stopping instance information| ).
+    cl_abap_unit_assert=>assert_equals(
+      act = lo_stopping->get_instanceid( )
+      exp = lv_instance_id
+      msg = |Stopping instance ID should match| ).
+
+    " Wait for instance to be stopped
+    lv_status = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'stopped' ).
+    cl_abap_unit_assert=>assert_equals(
+      act = lv_status
+      exp = 'stopped'
+      msg = |Instance should reach stopped state| ).
+
+    " Test start_instance
+    DATA(lo_start_result) = ao_ec2_actions->start_instance( lv_instance_id ).
+    cl_abap_unit_assert=>assert_not_initial(
+      act = lo_start_result
+      msg = |Start instance operation should return result| ).
+    READ TABLE lo_start_result->get_startinginstances( ) INTO DATA(lo_starting) INDEX 1.
+    cl_abap_unit_assert=>assert_equals(
+      act = lo_starting->get_instanceid( )
+      exp = lv_instance_id
+      msg = |Starting instance ID should match| ).
+
+    " Wait for instance to be running again
+    lv_status = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'running' ).
+    cl_abap_unit_assert=>assert_equals(
+      act = lv_status
+      exp = 'running'
+      msg = |Instance should be running again after start| ).
+
+    " Test reboot_instance
+    ao_ec2_actions->reboot_instance( lv_instance_id ).
+    " Brief wait after reboot
+    WAIT UP TO 5 SECONDS.
+    " Verify instance still exists
+    DATA(lo_describe) = ao_ec2->describeinstances(
+      it_instanceids = VALUE /aws1/cl_ec2instidstringlist_w=>tt_instanceidstringlist(
+        ( NEW /aws1/cl_ec2instidstringlist_w( lv_instance_id ) )
+      ) ).
+    cl_abap_unit_assert=>assert_not_initial(
+      act = lo_describe->get_reservations( )
+      msg = |Instance should still exist after reboot| ).
+
+    " Test terminate_instances
+    DATA(lo_terminate_result) = ao_ec2_actions->terminate_instances(
+      VALUE /aws1/cl_ec2instidstringlist_w=>tt_instanceidstringlist(
+        ( NEW /aws1/cl_ec2instidstringlist_w( lv_instance_id ) )
+      ) ).
+    READ TABLE lo_terminate_result->get_terminatinginstances( ) INTO DATA(lo_terminating) INDEX 1.
+    cl_abap_unit_assert=>assert_equals(
+      act = lo_terminating->get_instanceid( )
+      exp = lv_instance_id
+      msg = |Terminating instance ID should match| ).
   ENDMETHOD.
 
-  METHOD start_instance.
-    " Test start_instance operation independently
+  METHOD mon_and_addr_management.
+    " Consolidated test for monitoring and address management operations
     DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
-    DATA(lv_tag_value) = |{ /awsex/cl_utils=>cv_asset_prefix }-start-{ lv_uuid }|.
-    
-    " Create instance and stop it for start testing
+    DATA(lv_tag_value) = |{ /awsex/cl_utils=>cv_asset_prefix }-mon-addr-{ lv_uuid }|.
+
+    " Create instance for monitoring and address testing
     DATA(lo_create_result) = ao_ec2->runinstances(
         iv_imageid = av_ami_id
         iv_instancetype = 't3.micro'
@@ -578,46 +594,111 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
     READ TABLE lo_create_result->get_instances( ) INTO DATA(lo_instance) INDEX 1.
     DATA(lv_instance_id) = lo_instance->get_instanceid( ).
     APPEND lv_instance_id TO at_cleanup_instances.
-    
-    " Wait for instance to be running first
+
+    " Wait for instance to be running
     DATA(lv_status) = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'running' ).
-    
-    " Stop the instance first (need stopped state to test start)
-    ao_ec2->stopinstances(
-      it_instanceids = VALUE /aws1/cl_ec2instidstringlist_w=>tt_instanceidstringlist(
-        ( NEW /aws1/cl_ec2instidstringlist_w( lv_instance_id ) )
-      ) ).
-    
-    " Wait for stopped state with limited retries to avoid timeout
-    DATA lv_retries TYPE i VALUE 0.
-    DO 4 TIMES.
-      lv_status = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'stopped' ).
-      IF lv_status = 'stopped'.
-        EXIT.
-      ENDIF.
-      IF lv_retries < 3.
-        WAIT UP TO 10 SECONDS.
-        lv_retries = lv_retries + 1.
-      ENDIF.
-    ENDDO.
-    
-    " Only test start if instance is stopped
-    IF lv_status = 'stopped'.
-      " Test start_instance
-      DATA(lo_start_result) = ao_ec2_actions->start_instance( lv_instance_id ).
-      cl_abap_unit_assert=>assert_not_initial(
-        act = lo_start_result
-        msg = |Start instance operation should return result| ).
-      
-      " Verify start was initiated
-      READ TABLE lo_start_result->get_startinginstances( ) INTO DATA(lo_starting) INDEX 1.
-      cl_abap_unit_assert=>assert_bound(
-        act = lo_starting
-        msg = |Should have starting instance information| ).
-    ELSE.
-      " Skip start test if instance didn't reach stopped state in time
-      MESSAGE 'Instance did not reach stopped state in time, skipping start test' TYPE 'I'.
+    cl_abap_unit_assert=>assert_equals(
+      act = lv_status
+      exp = 'running'
+      msg = |Instance should reach running state| ).
+
+    " Test monitor_instance
+    DATA(lo_monitor_result) = ao_ec2_actions->monitor_instance( lv_instance_id ).
+    cl_abap_unit_assert=>assert_not_initial(
+      act = lo_monitor_result
+      msg = |Monitor instance operation should return result| ).
+    READ TABLE lo_monitor_result->get_instancemonitorings( ) INTO DATA(lo_monitoring) INDEX 1.
+    cl_abap_unit_assert=>assert_bound(
+      act = lo_monitoring
+      msg = |Monitoring information should be available| ).
+    cl_abap_unit_assert=>assert_equals(
+      act = lo_monitoring->get_instanceid( )
+      exp = lv_instance_id
+      msg = |Monitored instance ID should match| ).
+    DATA(lv_monitoring_state) = lo_monitoring->get_monitoring( )->get_state( ).
+    IF lv_monitoring_state <> 'enabled' AND lv_monitoring_state <> 'pending'.
+      cl_abap_unit_assert=>fail( msg = |Monitoring status should be enabled or pending, got: { lv_monitoring_state }| ).
     ENDIF.
+
+    " Test associate_address and disassociate_address
+    DATA lv_igw_id TYPE /aws1/ec2internetgatewayid.
+    DATA lv_igw_attached TYPE abap_bool VALUE abap_false.
+    DATA lv_allocation_id TYPE /aws1/ec2allocationid.
+
+    TRY.
+        " Check if VPC already has an internet gateway attached
+        DATA(lo_existing_igws) = ao_ec2->describeinternetgateways(
+          it_filters = VALUE /aws1/cl_ec2filter=>tt_filterlist(
+            ( NEW /aws1/cl_ec2filter(
+                iv_name = 'attachment.vpc-id'
+                it_values = VALUE /aws1/cl_ec2valuestringlist_w=>tt_valuestringlist(
+                  ( NEW /aws1/cl_ec2valuestringlist_w( av_vpc_id ) )
+                )
+            ) )
+          ) ).
+
+        IF lo_existing_igws->get_internetgateways( ) IS INITIAL.
+          " No existing IGW, create and attach one
+          lv_igw_id = ao_ec2->createinternetgateway( )->get_internetgateway( )->get_internetgatewayid( ).
+          ao_ec2->attachinternetgateway( iv_internetgatewayid = lv_igw_id iv_vpcid = av_vpc_id ).
+          lv_igw_attached = abap_true.
+        ELSE.
+          " Use existing IGW
+          READ TABLE lo_existing_igws->get_internetgateways( ) INTO DATA(lo_igw) INDEX 1.
+          lv_igw_id = lo_igw->get_internetgatewayid( ).
+        ENDIF.
+
+        " Allocate Elastic IP
+        lv_allocation_id = ao_ec2->allocateaddress( iv_domain = 'vpc' )->get_allocationid( ).
+
+        " Test associate_address
+        DATA(lo_assoc_result) = ao_ec2_actions->associate_address(
+            iv_instance_id = lv_instance_id
+            iv_allocation_id = lv_allocation_id ).
+        cl_abap_unit_assert=>assert_not_initial(
+          act = lo_assoc_result->get_associationid( )
+          msg = |Associate address operation should return association ID| ).
+
+        " Test disassociate_address
+        ao_ec2_actions->disassociate_address( lo_assoc_result->get_associationid( ) ).
+
+        " Verify disassociation by checking address status
+        DATA(lo_describe_addr) = ao_ec2->describeaddresses(
+          it_allocationids = VALUE /aws1/cl_ec2allocidstrlist_w=>tt_allocationidlist(
+            ( NEW /aws1/cl_ec2allocidstrlist_w( lv_allocation_id ) )
+          ) ).
+        READ TABLE lo_describe_addr->get_addresses( ) INTO DATA(lo_address) INDEX 1.
+        cl_abap_unit_assert=>assert_initial(
+          act = lo_address->get_associationid( )
+          msg = |Address should not have association after disassociate| ).
+
+        " Clean up: Release address
+        ao_ec2->releaseaddress( iv_allocationid = lv_allocation_id ).
+
+        " Clean up IGW if we created it
+        IF lv_igw_attached = abap_true.
+          ao_ec2->detachinternetgateway( iv_internetgatewayid = lv_igw_id iv_vpcid = av_vpc_id ).
+          ao_ec2->deleteinternetgateway( iv_internetgatewayid = lv_igw_id ).
+        ENDIF.
+
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
+        " Clean up on error
+        TRY.
+            IF lv_allocation_id IS NOT INITIAL.
+              ao_ec2->releaseaddress( iv_allocationid = lv_allocation_id ).
+            ENDIF.
+          CATCH /aws1/cx_rt_generic.
+        ENDTRY.
+        TRY.
+            IF lv_igw_attached = abap_true AND lv_igw_id IS NOT INITIAL.
+              ao_ec2->detachinternetgateway( iv_internetgatewayid = lv_igw_id iv_vpcid = av_vpc_id ).
+              ao_ec2->deleteinternetgateway( iv_internetgatewayid = lv_igw_id ).
+            ENDIF.
+          CATCH /aws1/cx_rt_generic.
+        ENDTRY.
+        " Fail the test with error details
+        cl_abap_unit_assert=>fail( msg = |Monitoring and address management operations failed: { lo_ex->get_text( ) }| ).
+    ENDTRY.
   ENDMETHOD.
 
   METHOD vpc_endpoint_operations.
@@ -679,133 +760,6 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
     cl_abap_unit_assert=>assert_true(
       act = lv_endpoint_deleted
       msg = |VPC endpoint should be deleted or deleting| ).
-  ENDMETHOD.
-
-  METHOD instance_lifecycle.
-    " Consolidated lifecycle test for instance-related operations
-    " Covers: monitor, reboot, associate_address, disassociate_address
-    " Note: Stop and start are tested separately to avoid timing issues
-    
-    DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
-    DATA(lv_tag_value) = |{ /awsex/cl_utils=>cv_asset_prefix }-lifecycle-{ lv_uuid }|.
-    
-    " Create instance for lifecycle testing
-    DATA(lo_create_result) = ao_ec2->runinstances(
-        iv_imageid = av_ami_id
-        iv_instancetype = 't3.micro'
-        iv_maxcount = 1
-        iv_mincount = 1
-        iv_subnetid = av_subnet_id
-        it_tagspecifications = VALUE /aws1/cl_ec2tagspecification=>tt_tagspecificationlist(
-          ( NEW /aws1/cl_ec2tagspecification(
-              iv_resourcetype = 'instance'
-              it_tags = VALUE /aws1/cl_ec2tag=>tt_taglist(
-                ( NEW /aws1/cl_ec2tag( iv_key = 'Name' iv_value = lv_tag_value ) )
-                ( NEW /aws1/cl_ec2tag( iv_key = 'convert_test' iv_value = 'true' ) )
-              )
-          ) )
-        )
-    ).
-    READ TABLE lo_create_result->get_instances( ) INTO DATA(lo_instance) INDEX 1.
-    DATA(lv_instance_id) = lo_instance->get_instanceid( ).
-    APPEND lv_instance_id TO at_cleanup_instances.
-    
-    " Wait for instance to reach running state
-    DATA(lv_status) = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'running' ).
-    IF lv_status <> 'running' AND lv_status <> 'pending'.
-      cl_abap_unit_assert=>fail( msg = |Instance { lv_instance_id } did not reach running/pending state. Current state: { lv_status }| ).
-    ENDIF.
-    
-    " Test monitor_instance - verify monitoring status is enabled
-    DATA(lo_monitor_result) = ao_ec2_actions->monitor_instance( lv_instance_id ).
-    cl_abap_unit_assert=>assert_bound(
-      act = lo_monitor_result
-      msg = |Monitor instance operation failed| ).
-    
-    " Verify monitoring is enabled by checking the monitoring status
-    READ TABLE lo_monitor_result->get_instancemonitorings( ) INTO DATA(lo_monitoring) INDEX 1.
-    cl_abap_unit_assert=>assert_bound(
-      act = lo_monitoring
-      msg = |Monitoring information should be available| ).
-    DATA(lv_monitoring_state) = lo_monitoring->get_monitoring( )->get_state( ).
-    IF lv_monitoring_state <> 'enabled' AND lv_monitoring_state <> 'pending'.
-      cl_abap_unit_assert=>fail( msg = |Monitoring status should be enabled or pending, got: { lv_monitoring_state }| ).
-    ENDIF.
-    
-    " Test reboot_instance - verify the operation succeeds
-    ao_ec2_actions->reboot_instance( lv_instance_id ).
-    " Minimal wait after reboot request
-    WAIT UP TO 2 SECONDS.
-    
-    " Test associate_address and disassociate_address
-    DATA lv_igw_id TYPE /aws1/ec2internetgatewayid.
-    DATA lv_igw_attached TYPE abap_bool VALUE abap_false.
-    DATA lv_allocation_id TYPE /aws1/ec2allocationid.
-    
-    TRY.
-        " Check if VPC already has an internet gateway attached
-        DATA(lo_existing_igws) = ao_ec2->describeinternetgateways(
-          it_filters = VALUE /aws1/cl_ec2filter=>tt_filterlist(
-            ( NEW /aws1/cl_ec2filter(
-                iv_name = 'attachment.vpc-id'
-                it_values = VALUE /aws1/cl_ec2valuestringlist_w=>tt_valuestringlist(
-                  ( NEW /aws1/cl_ec2valuestringlist_w( av_vpc_id ) )
-                )
-            ) )
-          ) ).
-        
-        IF lo_existing_igws->get_internetgateways( ) IS INITIAL.
-          " No existing IGW, create and attach one
-          lv_igw_id = ao_ec2->createinternetgateway( )->get_internetgateway( )->get_internetgatewayid( ).
-          ao_ec2->attachinternetgateway( iv_internetgatewayid = lv_igw_id iv_vpcid = av_vpc_id ).
-          lv_igw_attached = abap_true.
-        ELSE.
-          " Use existing IGW
-          READ TABLE lo_existing_igws->get_internetgateways( ) INTO DATA(lo_igw) INDEX 1.
-          lv_igw_id = lo_igw->get_internetgatewayid( ).
-        ENDIF.
-        
-        " Allocate Elastic IP
-        lv_allocation_id = ao_ec2->allocateaddress( iv_domain = 'vpc' )->get_allocationid( ).
-        
-        " Associate address - verify operation succeeds
-        DATA(lo_assoc_result) = ao_ec2_actions->associate_address(
-            iv_instance_id = lv_instance_id
-            iv_allocation_id = lv_allocation_id ).
-        cl_abap_unit_assert=>assert_not_initial(
-          act = lo_assoc_result->get_associationid( )
-          msg = |Associate address operation failed| ).
-        
-        " Disassociate address - verify operation succeeds
-        ao_ec2_actions->disassociate_address( lo_assoc_result->get_associationid( ) ).
-        
-        " Release address
-        ao_ec2->releaseaddress( iv_allocationid = lv_allocation_id ).
-        
-        " Clean up IGW if we created it
-        IF lv_igw_attached = abap_true.
-          ao_ec2->detachinternetgateway( iv_internetgatewayid = lv_igw_id iv_vpcid = av_vpc_id ).
-          ao_ec2->deleteinternetgateway( iv_internetgatewayid = lv_igw_id ).
-        ENDIF.
-        
-      CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
-        " Clean up on error
-        TRY.
-            IF lv_allocation_id IS NOT INITIAL.
-              ao_ec2->releaseaddress( iv_allocationid = lv_allocation_id ).
-            ENDIF.
-          CATCH /aws1/cx_rt_generic.
-        ENDTRY.
-        TRY.
-            IF lv_igw_attached = abap_true AND lv_igw_id IS NOT INITIAL.
-              ao_ec2->detachinternetgateway( iv_internetgatewayid = lv_igw_id iv_vpcid = av_vpc_id ).
-              ao_ec2->deleteinternetgateway( iv_internetgatewayid = lv_igw_id ).
-            ENDIF.
-          CATCH /aws1/cx_rt_generic.
-        ENDTRY.
-        " Fail the test with error details
-        cl_abap_unit_assert=>fail( msg = |Instance lifecycle operations failed: { lo_ex->get_text( ) }| ).
-    ENDTRY.
   ENDMETHOD.
 
   METHOD get_ami_id.
