@@ -664,8 +664,8 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
 
         " Verify disassociation by checking address status
         DATA(lo_describe_addr) = ao_ec2->describeaddresses(
-          it_allocationids = VALUE /aws1/cl_ec2allocidstrlist_w=>tt_allocationidlist(
-            ( NEW /aws1/cl_ec2allocidstrlist_w( lv_allocation_id ) )
+          it_allocationids = VALUE /aws1/cl_ec2allocationidlist_w=>tt_allocationidlist(
+            ( NEW /aws1/cl_ec2allocationidlist_w( lv_allocation_id ) )
           ) ).
         READ TABLE lo_describe_addr->get_addresses( ) INTO DATA(lo_address) INDEX 1.
         cl_abap_unit_assert=>assert_initial(
