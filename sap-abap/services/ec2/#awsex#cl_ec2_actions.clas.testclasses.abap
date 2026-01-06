@@ -39,7 +39,8 @@ CLASS ltc_awsex_cl_ec2_actions DEFINITION FOR TESTING DURATION LONG RISK LEVEL D
       " Instance tests - lightweight
       create_instance FOR TESTING RAISING /aws1/cx_rt_generic,
       " Lifecycle operation tests - testing SDK methods work correctly
-      stop_and_start_instances FOR TESTING RAISING /aws1/cx_rt_generic,
+      stop_instance_test FOR TESTING RAISING /aws1/cx_rt_generic,
+      start_instance_test FOR TESTING RAISING /aws1/cx_rt_generic,
       reboot_and_terminate_inst FOR TESTING RAISING /aws1/cx_rt_generic,
       mon_and_addr_management FOR TESTING RAISING /aws1/cx_rt_generic.
 
@@ -473,14 +474,13 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
     ENDTRY.
   ENDMETHOD.
 
-  METHOD stop_and_start_instances.
-    " Test stop_instance and start_instance SDK methods
-    " Note: We verify the API calls work but don't wait for full state transition
-    " to avoid Lambda timeout issues with slow-stopping instances
+  METHOD stop_instance_test.
+    " Test stop_instance SDK method using a dedicated instance
+    " This test is separate from start to avoid Lambda timeout issues
     DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
-    DATA(lv_tag_value) = |{ /awsex/cl_utils=>cv_asset_prefix }-stop-start-{ lv_uuid }|.
+    DATA(lv_tag_value) = |{ /awsex/cl_utils=>cv_asset_prefix }-stop-{ lv_uuid }|.
 
-    " Create instance
+    " Create instance for stop testing
     DATA(lo_create_result) = ao_ec2->runinstances(
         iv_imageid = av_ami_id
         iv_instancetype = 't3.micro'
@@ -538,42 +538,100 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
       cl_abap_unit_assert=>fail( msg = |Instance should be stopping or stopped, got: { lv_current_state }| ).
     ENDIF.
 
-    " Test start_instance - Note: May not succeed if instance hasn't fully stopped
-    " We test the API accepts the call even if instance is still stopping
+    " Clean up - terminate instance
     TRY.
-        DATA(lo_start_result) = ao_ec2_actions->start_instance( lv_instance_id ).
-        " If it succeeds, verify the response
-        cl_abap_unit_assert=>assert_not_initial(
-          act = lo_start_result
-          msg = |Start instance API should return result| ).
-      CATCH /aws1/cx_ec2clientexc INTO DATA(lo_client_ex).
-        " Expected if instance is still stopping - check error message
-        DATA(lv_error_msg) = lo_client_ex->get_text( ).
-        IF lv_error_msg CS 'not in a state' OR lv_error_msg CS 'IncorrectInstanceState'.
-          " Expected error - API works correctly, instance just needs more time to stop
-          MESSAGE |Start call received expected state exception - API works correctly| TYPE 'I'.
-        ELSE.
-          " Unexpected error - clean up and fail
-          TRY.
-              ao_ec2->terminateinstances00(
-                it_instanceids = VALUE /aws1/cl_ec2instidstringlist_w=>tt_instanceidstringlist(
-                  ( NEW /aws1/cl_ec2instidstringlist_w( lv_instance_id ) )
-                ) ).
-            CATCH /aws1/cx_rt_generic.
-          ENDTRY.
-          cl_abap_unit_assert=>fail( msg = |Start instance failed unexpectedly: { lv_error_msg }| ).
-        ENDIF.
-      CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
-        " Other errors - clean up and fail
-        TRY.
-            ao_ec2->terminateinstances00(
-              it_instanceids = VALUE /aws1/cl_ec2instidstringlist_w=>tt_instanceidstringlist(
-                ( NEW /aws1/cl_ec2instidstringlist_w( lv_instance_id ) )
-              ) ).
-          CATCH /aws1/cx_rt_generic.
-        ENDTRY.
-        cl_abap_unit_assert=>fail( msg = |Start instance failed unexpectedly: { lo_ex->get_text( ) }| ).
+        ao_ec2->terminateinstances00(
+          it_instanceids = VALUE /aws1/cl_ec2instidstringlist_w=>tt_instanceidstringlist(
+            ( NEW /aws1/cl_ec2instidstringlist_w( lv_instance_id ) )
+          ) ).
+      CATCH /aws1/cx_rt_generic.
     ENDTRY.
+  ENDMETHOD.
+
+  METHOD start_instance_test.
+    " Test start_instance SDK method using a dedicated instance
+    " This test is separate from stop to avoid Lambda timeout issues
+    " We create a stopped instance to test the start functionality
+    DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
+    DATA(lv_tag_value) = |{ /awsex/cl_utils=>cv_asset_prefix }-start-{ lv_uuid }|.
+
+    " Create instance for start testing
+    DATA(lo_create_result) = ao_ec2->runinstances(
+        iv_imageid = av_ami_id
+        iv_instancetype = 't3.micro'
+        iv_maxcount = 1
+        iv_mincount = 1
+        iv_subnetid = av_subnet_id
+        it_tagspecifications = VALUE /aws1/cl_ec2tagspecification=>tt_tagspecificationlist(
+          ( NEW /aws1/cl_ec2tagspecification(
+              iv_resourcetype = 'instance'
+              it_tags = VALUE /aws1/cl_ec2tag=>tt_taglist(
+                ( NEW /aws1/cl_ec2tag( iv_key = 'Name' iv_value = lv_tag_value ) )
+                ( NEW /aws1/cl_ec2tag( iv_key = 'convert_test' iv_value = 'true' ) )
+              )
+          ) )
+        )
+    ).
+    READ TABLE lo_create_result->get_instances( ) INTO DATA(lo_instance) INDEX 1.
+    DATA(lv_instance_id) = lo_instance->get_instanceid( ).
+    
+    " Wait for instance to be running first
+    DATA(lv_status) = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'running' ).
+    IF lv_status <> 'running'.
+      " Clean up and fail
+      TRY.
+          ao_ec2->terminateinstances00(
+            it_instanceids = VALUE /aws1/cl_ec2instidstringlist_w=>tt_instanceidstringlist(
+              ( NEW /aws1/cl_ec2instidstringlist_w( lv_instance_id ) )
+            ) ).
+        CATCH /aws1/cx_rt_generic.
+      ENDTRY.
+      cl_abap_unit_assert=>fail( msg = |Instance did not reach running state: { lv_status }| ).
+    ENDIF.
+
+    " Stop the instance first to prepare for start test
+    ao_ec2->stopinstances(
+      it_instanceids = VALUE /aws1/cl_ec2instidstringlist_w=>tt_instanceidstringlist(
+        ( NEW /aws1/cl_ec2instidstringlist_w( lv_instance_id ) )
+      ) ).
+
+    " Wait for instance to be fully stopped
+    lv_status = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'stopped' ).
+    IF lv_status <> 'stopped'.
+      " Clean up and fail
+      TRY.
+          ao_ec2->terminateinstances00(
+            it_instanceids = VALUE /aws1/cl_ec2instidstringlist_w=>tt_instanceidstringlist(
+              ( NEW /aws1/cl_ec2instidstringlist_w( lv_instance_id ) )
+            ) ).
+        CATCH /aws1/cx_rt_generic.
+      ENDTRY.
+      cl_abap_unit_assert=>fail( msg = |Instance did not reach stopped state: { lv_status }| ).
+    ENDIF.
+
+    " Test start_instance - verify API call succeeds
+    DATA(lo_start_result) = ao_ec2_actions->start_instance( lv_instance_id ).
+    cl_abap_unit_assert=>assert_not_initial(
+      act = lo_start_result
+      msg = |Start instance API should return result| ).
+    READ TABLE lo_start_result->get_startinginstances( ) INTO DATA(lo_starting) INDEX 1.
+    cl_abap_unit_assert=>assert_equals(
+      act = lo_starting->get_instanceid( )
+      exp = lv_instance_id
+      msg = |Starting instance ID should match| ).
+    
+    " Verify instance is in pending or running state
+    DATA(lv_current_state) = lo_starting->get_currentstate( )->get_name( ).
+    IF lv_current_state <> 'pending' AND lv_current_state <> 'running'.
+      TRY.
+          ao_ec2->terminateinstances00(
+            it_instanceids = VALUE /aws1/cl_ec2instidstringlist_w=>tt_instanceidstringlist(
+              ( NEW /aws1/cl_ec2instidstringlist_w( lv_instance_id ) )
+            ) ).
+        CATCH /aws1/cx_rt_generic.
+      ENDTRY.
+      cl_abap_unit_assert=>fail( msg = |Instance should be pending or running after start, got: { lv_current_state }| ).
+    ENDIF.
 
     " Clean up - terminate instance
     TRY.
