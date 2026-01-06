@@ -9,15 +9,24 @@ CLASS ltc_awsex_cl_rds_actions DEFINITION FOR TESTING DURATION LONG RISK LEVEL D
     CLASS-DATA ao_rds TYPE REF TO /aws1/if_rds.
     CLASS-DATA ao_session TYPE REF TO /aws1/cl_rt_session_base.
     CLASS-DATA ao_rds_actions TYPE REF TO /awsex/cl_rds_actions.
-    CLASS-DATA gv_uuid TYPE string.
-    CLASS-DATA gv_param_group_name TYPE /aws1/rdsstring.
-    CLASS-DATA gv_cluster_id TYPE /aws1/rdsstring.
-    CLASS-DATA gv_instance_id TYPE /aws1/rdsstring.
-    CLASS-DATA gv_snapshot_id TYPE /aws1/rdsstring.
-    CLASS-DATA gv_param_group_name_2 TYPE /aws1/rdsstring.
-    CLASS-DATA gv_cluster_id_2 TYPE /aws1/rdsstring.
-    CLASS-DATA gv_instance_id_2 TYPE /aws1/rdsstring.
-    CLASS-DATA gv_engine_version TYPE /aws1/rdsstring.
+
+    " Regular DB parameter group tests (MySQL)
+    METHODS: describe_db_parameter_groups FOR TESTING RAISING /aws1/cx_rt_generic,
+      create_db_parameter_group FOR TESTING RAISING /aws1/cx_rt_generic,
+      describe_db_parameters FOR TESTING RAISING /aws1/cx_rt_generic,
+      modify_db_parameter_group FOR TESTING RAISING /aws1/cx_rt_generic,
+      delete_db_parameter_group FOR TESTING RAISING /aws1/cx_rt_generic.
+
+    " Cluster parameter group tests (Aurora MySQL)
+    METHODS: descr_db_clust_param_groups FOR TESTING RAISING /aws1/cx_rt_generic,
+      create_db_clust_param_group FOR TESTING RAISING /aws1/cx_rt_generic,
+      descr_db_cluster_parameters FOR TESTING RAISING /aws1/cx_rt_generic,
+      modify_db_clust_param_group FOR TESTING RAISING /aws1/cx_rt_generic,
+      delete_db_clust_param_group FOR TESTING RAISING /aws1/cx_rt_generic.
+
+    " Engine version and instance option tests
+    METHODS: describe_db_engine_versions FOR TESTING RAISING /aws1/cx_rt_generic,
+      descrorderabledbinstopts FOR TESTING RAISING /aws1/cx_rt_generic.
 
     CLASS-METHODS class_setup RAISING /aws1/cx_rt_generic.
     CLASS-METHODS class_teardown RAISING /aws1/cx_rt_generic.
@@ -282,15 +291,28 @@ CLASS ltc_awsex_cl_rds_actions IMPLEMENTATION.
 
   ENDMETHOD.
 
-  METHOD create_parameter_group.
+  METHOD descr_db_clust_param_groups.
     DATA lo_result TYPE REF TO /aws1/cl_rdsdbclustparamgroup.
+    DATA lv_uuid TYPE string.
+    DATA lv_cluster_pg_name TYPE /aws1/rdsstring.
 
+    lv_uuid = /awsex/cl_utils=>get_random_string( ).
+    lv_cluster_pg_name = |test-cpg-{ lv_uuid }|.
+
+    " Create a cluster parameter group for testing
     TRY.
-        lo_result = ao_rds_actions->create_db_cluster_parameter_group(
-          iv_param_group_name = gv_param_group_name_2
-          iv_param_group_family = 'aurora-mysql8.0'
-          iv_description = 'ABAP test parameter group 2'
-        ).
+        ao_rds->createdbclusterparamgroup(
+          iv_dbclusterparamgroupname = lv_cluster_pg_name
+          iv_dbparametergroupfamily = 'aurora-mysql8.0'
+          iv_description = 'Test cluster parameter group'
+          it_tags = VALUE #( ( NEW /aws1/cl_rdstag( iv_key = 'convert_test' iv_value = 'true' ) ) ) ).
+      CATCH /aws1/cx_rdsdbparmgralrexfault.
+        " Already exists
+    ENDTRY.
+
+    " Test describe
+    lo_result = ao_rds_actions->descr_db_clust_param_groups(
+      iv_param_group_name = lv_cluster_pg_name ).
 
         cl_abap_unit_assert=>assert_bound(
           act = lo_result
@@ -313,13 +335,18 @@ CLASS ltc_awsex_cl_rds_actions IMPLEMENTATION.
     ENDTRY.
   ENDMETHOD.
 
-  METHOD get_parameter_group.
+  METHOD create_db_clust_param_group.
     DATA lo_result TYPE REF TO /aws1/cl_rdsdbclustparamgroup.
+    DATA lv_uuid TYPE string.
+    DATA lv_cluster_pg_name TYPE /aws1/rdsstring.
 
-    TRY.
-        lo_result = ao_rds_actions->describe_db_cluster_parameter_groups(
-          iv_param_group_name = gv_param_group_name
-        ).
+    lv_uuid = /awsex/cl_utils=>get_random_string( ).
+    lv_cluster_pg_name = |test-cpg-cr-{ lv_uuid }|.
+
+    lo_result = ao_rds_actions->create_db_clust_param_group(
+      iv_param_group_name = lv_cluster_pg_name
+      iv_param_group_family = 'aurora-mysql8.0'
+      iv_description = 'Test cluster parameter group creation' ).
 
         cl_abap_unit_assert=>assert_bound(
           act = lo_result
@@ -342,14 +369,29 @@ CLASS ltc_awsex_cl_rds_actions IMPLEMENTATION.
     ENDTRY.
   ENDMETHOD.
 
-  METHOD get_parameters.
+  METHOD descr_db_cluster_parameters.
     DATA lt_parameters TYPE /aws1/cl_rdsparameter=>tt_parameterslist.
+    DATA lv_uuid TYPE string.
+    DATA lv_cluster_pg_name TYPE /aws1/rdsstring.
 
+    lv_uuid = /awsex/cl_utils=>get_random_string( ).
+    lv_cluster_pg_name = |test-cpg-dp-{ lv_uuid }|.
+
+    " Create a cluster parameter group for testing
     TRY.
-        lt_parameters = ao_rds_actions->describe_db_cluster_parameters(
-          iv_param_group_name = gv_param_group_name
-          iv_source = 'engine-default'
-        ).
+        ao_rds->createdbclusterparamgroup(
+          iv_dbclusterparamgroupname = lv_cluster_pg_name
+          iv_dbparametergroupfamily = 'aurora-mysql8.0'
+          iv_description = 'Test cluster parameter group for parameters'
+          it_tags = VALUE #( ( NEW /aws1/cl_rdstag( iv_key = 'convert_test' iv_value = 'true' ) ) ) ).
+      CATCH /aws1/cx_rdsdbparmgralrexfault.
+        " Already exists
+    ENDTRY.
+
+    " Test describe parameters
+    lt_parameters = ao_rds_actions->descr_db_cluster_parameters(
+      iv_param_group_name = lv_cluster_pg_name
+      iv_source = 'engine-default' ).
 
         cl_abap_unit_assert=>assert_not_initial(
           act = lines( lt_parameters )
@@ -366,7 +408,7 @@ CLASS ltc_awsex_cl_rds_actions IMPLEMENTATION.
     ENDTRY.
   ENDMETHOD.
 
-  METHOD update_parameters.
+  METHOD modify_db_clust_param_group.
     DATA lo_result TYPE REF TO /aws1/cl_rdsdbclstprmgrnamemsg.
     DATA lt_parameters TYPE /aws1/cl_rdsparameter=>tt_parameterslist.
 
@@ -379,10 +421,9 @@ CLASS ltc_awsex_cl_rds_actions IMPLEMENTATION.
         ).
         APPEND lo_param TO lt_parameters.
 
-        lo_result = ao_rds_actions->modify_db_cluster_parameter_group(
-          iv_param_group_name = gv_param_group_name
-          it_update_parameters = lt_parameters
-        ).
+    lo_result = ao_rds_actions->modify_db_clust_param_group(
+      iv_param_group_name = lv_cluster_pg_name
+      it_update_parameters = lt_parameters ).
 
         cl_abap_unit_assert=>assert_bound(
           act = lo_result
@@ -405,27 +446,36 @@ CLASS ltc_awsex_cl_rds_actions IMPLEMENTATION.
     ENDTRY.
   ENDMETHOD.
 
-  METHOD get_engine_versions.
-    DATA lt_versions TYPE /aws1/cl_rdsdbengineversion=>tt_dbengineversionlist.
+  METHOD delete_db_clust_param_group.
+    DATA lv_uuid TYPE string.
+    DATA lv_cluster_pg_name TYPE /aws1/rdsstring.
 
+    lv_uuid = /awsex/cl_utils=>get_random_string( ).
+    lv_cluster_pg_name = |test-cpg-del-{ lv_uuid }|.
+
+    " Create a cluster parameter group specifically for deletion
+    ao_rds->createdbclusterparamgroup(
+      iv_dbclusterparamgroupname = lv_cluster_pg_name
+      iv_dbparametergroupfamily = 'aurora-mysql8.0'
+      iv_description = 'Test cluster parameter group for deletion'
+      it_tags = VALUE #( ( NEW /aws1/cl_rdstag( iv_key = 'convert_test' iv_value = 'true' ) ) ) ).
+
+    " Verify it was created
     TRY.
-        lt_versions = ao_rds_actions->describe_db_engine_versions(
-          iv_engine = 'aurora-mysql'
-          iv_param_group_family = 'aurora-mysql8.0'
-        ).
+        ao_rds->describedbclusterparamgroups( iv_dbclusterparamgroupname = lv_cluster_pg_name ).
+      CATCH /aws1/cx_rdsdbprmgrnotfndfault.
+        cl_abap_unit_assert=>fail( msg = 'Test cluster parameter group was not created' ).
+    ENDTRY.
 
-        cl_abap_unit_assert=>assert_not_initial(
-          act = lines( lt_versions )
-          msg = 'No engine versions retrieved'
-        ).
-      CATCH /aws1/cx_rt_generic INTO DATA(lo_exception).
-        " Skip if cluster not found
-        DATA(lv_error_msg) = lo_exception->get_text( ).
-        IF lv_error_msg CS 'DBClusterNotFound'.
-          RETURN.  " Skip test - resource not available
-        ELSE.
-          cl_abap_unit_assert=>fail( |Error: { lv_error_msg }| ).
-        ENDIF.
+    " Delete it using the action method
+    ao_rds_actions->delete_db_clust_param_group( iv_param_group_name = lv_cluster_pg_name ).
+
+    " Verify deletion
+    TRY.
+        ao_rds->describedbclusterparamgroups( iv_dbclusterparamgroupname = lv_cluster_pg_name ).
+        cl_abap_unit_assert=>fail( msg = 'Cluster parameter group should have been deleted' ).
+      CATCH /aws1/cx_rdsdbprmgrnotfndfault.
+        " Expected - cluster parameter group was deleted successfully
     ENDTRY.
   ENDMETHOD.
 
