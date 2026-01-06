@@ -595,10 +595,9 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
 
     " Wait for instance to be running
     DATA(lv_status) = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'running' ).
-    cl_abap_unit_assert=>assert_equals(
-      act = lv_status
-      exp = 'running'
-      msg = |Instance should reach running state| ).
+    IF lv_status <> 'running'.
+      cl_abap_unit_assert=>fail( msg = |Instance should reach running state. Current state: { lv_status }| ).
+    ENDIF.
 
     " Test monitor_instance
     DATA(lo_monitor_result) = ao_ec2_actions->monitor_instance( lv_instance_id ).
@@ -640,6 +639,8 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
           lv_igw_id = ao_ec2->createinternetgateway( )->get_internetgateway( )->get_internetgatewayid( ).
           ao_ec2->attachinternetgateway( iv_internetgatewayid = lv_igw_id iv_vpcid = av_vpc_id ).
           lv_igw_attached = abap_true.
+          " Wait for IGW to be available
+          WAIT UP TO 5 SECONDS.
         ELSE.
           " Use existing IGW
           READ TABLE lo_existing_igws->get_internetgateways( ) INTO DATA(lo_igw) INDEX 1.
@@ -792,16 +793,16 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
 
   METHOD wait_for_instance.
     " Wait for instance to reach desired state with extended timeout
-    " Maximum 60 iterations with 3 second wait = 180 seconds (3 minutes) max
+    " Maximum 100 iterations with 5 second wait = 500 seconds (8+ minutes) max
     DATA lv_iterations TYPE i VALUE 0.
-    DATA lv_max_iterations TYPE i VALUE 60.
+    DATA lv_max_iterations TYPE i VALUE 100.
     
     DO lv_max_iterations TIMES.
       lv_iterations = lv_iterations + 1.
       
-      " Wait before checking status
+      " Wait before checking status (skip first iteration)
       IF lv_iterations > 1.
-        WAIT UP TO 3 SECONDS.
+        WAIT UP TO 5 SECONDS.
       ENDIF.
       
       TRY.
