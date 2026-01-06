@@ -932,17 +932,28 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
 
   METHOD wait_for_instance.
     " Wait for instance to reach desired state
-    " Maximum 50 iterations with 4 second wait = 200 seconds (~3 minutes) max
-    " This balances between adequate wait time and Lambda timeout limits
+    " Stopping instances can take longer, so we adjust wait times based on target state
     DATA lv_iterations TYPE i VALUE 0.
-    DATA lv_max_iterations TYPE i VALUE 50.
+    DATA lv_max_iterations TYPE i.
+    DATA lv_wait_seconds TYPE i.
+    
+    " Adjust iterations and wait time based on desired state
+    " Stopping/stopped states need more time (up to 5 minutes)
+    " Other states need less time (up to 3 minutes)
+    IF iv_required_status = 'stopped'.
+      lv_max_iterations = 60.  " 60 iterations
+      lv_wait_seconds = 5.      " 5 seconds each = 300 seconds (5 minutes)
+    ELSE.
+      lv_max_iterations = 45.  " 45 iterations
+      lv_wait_seconds = 4.      " 4 seconds each = 180 seconds (3 minutes)
+    ENDIF.
     
     DO lv_max_iterations TIMES.
       lv_iterations = lv_iterations + 1.
       
       " Wait before checking status (skip first iteration)
       IF lv_iterations > 1.
-        WAIT UP TO 4 SECONDS.
+        WAIT UP TO lv_wait_seconds SECONDS.
       ENDIF.
       
       TRY.
