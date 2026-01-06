@@ -194,18 +194,12 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD describe_addresses.
-    " Allocate an address to the VPC first
     DATA(lv_allocation_id) = ao_ec2->allocateaddress( iv_domain = 'vpc' )->get_allocationid( ).
-    
-    " Now call describe_addresses() method to verify it returns the allocated address
     DATA(lo_result) = ao_ec2_actions->describe_addresses( ).
     DATA(lt_addresses) = lo_result->get_addresses( ).
-    
-    " Verify we got addresses back and that our allocated address is in the list
     cl_abap_unit_assert=>assert_not_initial(
       act = lt_addresses
       msg = |Failed to retrieve any addresses| ).
-    
     DATA(lv_found) = abap_false.
     LOOP AT lt_addresses INTO DATA(lo_address).
       IF lo_address->get_allocationid( ) = lv_allocation_id.
@@ -213,12 +207,9 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
         EXIT.
       ENDIF.
     ENDLOOP.
-    
     cl_abap_unit_assert=>assert_true(
       act = lv_found
       msg = |Allocated address { lv_allocation_id } should be in described addresses| ).
-    
-    " Clean up
     ao_ec2->releaseaddress( iv_allocationid = lv_allocation_id ).
   ENDMETHOD.
 
