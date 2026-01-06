@@ -546,11 +546,11 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
         cl_abap_unit_assert=>assert_not_initial(
           act = lo_start_result
           msg = |Start instance API should return result| ).
-      CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
-        " May fail if instance is still stopping - check if it's the expected error
-        DATA(lv_error_code) = lo_ex->if_t100_message~t100key-msgid.
-        IF lv_error_code CS 'IncorrectInstanceState' OR lv_error_code CS 'InvalidInstanceID'.
-          " Expected error - API works correctly
+      CATCH /aws1/cx_ec2clientexc INTO DATA(lo_client_ex).
+        " Expected if instance is still stopping - check error message
+        DATA(lv_error_msg) = lo_client_ex->get_text( ).
+        IF lv_error_msg CS 'not in a state' OR lv_error_msg CS 'IncorrectInstanceState'.
+          " Expected error - API works correctly, instance just needs more time to stop
           MESSAGE |Start call received expected state exception - API works correctly| TYPE 'I'.
         ELSE.
           " Unexpected error - clean up and fail
@@ -561,8 +561,18 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
                 ) ).
             CATCH /aws1/cx_rt_generic.
           ENDTRY.
-          cl_abap_unit_assert=>fail( msg = |Start instance failed unexpectedly: { lo_ex->get_text( ) }| ).
+          cl_abap_unit_assert=>fail( msg = |Start instance failed unexpectedly: { lv_error_msg }| ).
         ENDIF.
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
+        " Other errors - clean up and fail
+        TRY.
+            ao_ec2->terminateinstances00(
+              it_instanceids = VALUE /aws1/cl_ec2instidstringlist_w=>tt_instanceidstringlist(
+                ( NEW /aws1/cl_ec2instidstringlist_w( lv_instance_id ) )
+              ) ).
+          CATCH /aws1/cx_rt_generic.
+        ENDTRY.
+        cl_abap_unit_assert=>fail( msg = |Start instance failed unexpectedly: { lo_ex->get_text( ) }| ).
     ENDTRY.
 
     " Clean up - terminate instance
