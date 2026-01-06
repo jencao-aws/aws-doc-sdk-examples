@@ -503,10 +503,9 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
 
     " Wait for instance to be running
     DATA(lv_status) = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'running' ).
-    cl_abap_unit_assert=>assert_equals(
-      act = lv_status
-      exp = 'running'
-      msg = |Instance should reach running state| ).
+    IF lv_status <> 'running'.
+      cl_abap_unit_assert=>fail( msg = |Instance should reach running state. Current state: { lv_status }| ).
+    ENDIF.
 
     " Test stop_instance
     DATA(lo_stop_result) = ao_ec2_actions->stop_instance( lv_instance_id ).
@@ -519,12 +518,12 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
       exp = lv_instance_id
       msg = |Stopping instance ID should match| ).
 
-    " Wait for instance to be stopped
+    " Wait for instance to be stopped with better error handling
     lv_status = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'stopped' ).
-    cl_abap_unit_assert=>assert_equals(
-      act = lv_status
-      exp = 'stopped'
-      msg = |Instance should reach stopped state| ).
+    IF lv_status <> 'stopped'.
+      " Provide detailed error message with current state
+      cl_abap_unit_assert=>fail( msg = |Instance should reach stopped state within timeout. Current state: { lv_status }. Instance ID: { lv_instance_id }| ).
+    ENDIF.
 
     " Test start_instance
     DATA(lo_start_result) = ao_ec2_actions->start_instance( lv_instance_id ).
@@ -539,10 +538,9 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
 
     " Wait for instance to be running again
     lv_status = wait_for_instance( iv_instance_id = lv_instance_id iv_required_status = 'running' ).
-    cl_abap_unit_assert=>assert_equals(
-      act = lv_status
-      exp = 'running'
-      msg = |Instance should be running again after start| ).
+    IF lv_status <> 'running'.
+      cl_abap_unit_assert=>fail( msg = |Instance should be running again after start. Current state: { lv_status }| ).
+    ENDIF.
 
     " Test reboot_instance
     ao_ec2_actions->reboot_instance( lv_instance_id ).
@@ -793,28 +791,47 @@ CLASS ltc_awsex_cl_ec2_actions IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD wait_for_instance.
-    " Reduced wait time to prevent Lambda timeout
-    " Maximum 20 iterations with 2 second wait = 40 seconds max
-    DO 20 TIMES.
-      WAIT UP TO 2 SECONDS.
+    " Wait for instance to reach desired state with extended timeout
+    " Maximum 60 iterations with 3 second wait = 180 seconds (3 minutes) max
+    DATA lv_iterations TYPE i VALUE 0.
+    DATA lv_max_iterations TYPE i VALUE 60.
+    
+    DO lv_max_iterations TIMES.
+      lv_iterations = lv_iterations + 1.
+      
+      " Wait before checking status
+      IF lv_iterations > 1.
+        WAIT UP TO 3 SECONDS.
+      ENDIF.
+      
       TRY.
           DATA(lo_describe) = ao_ec2->describeinstances(
               it_instanceids = VALUE /aws1/cl_ec2instidstringlist_w=>tt_instanceidstringlist(
                 ( NEW /aws1/cl_ec2instidstringlist_w( iv_instance_id ) )
               ) ).
           READ TABLE lo_describe->get_reservations( ) INTO DATA(lo_reservation) INDEX 1.
-          CHECK lo_reservation IS BOUND.
+          IF lo_reservation IS NOT BOUND.
+            CONTINUE.
+          ENDIF.
+          
           READ TABLE lo_reservation->get_instances( ) INTO DATA(lo_instance) INDEX 1.
-          CHECK lo_instance IS BOUND.
+          IF lo_instance IS NOT BOUND.
+            CONTINUE.
+          ENDIF.
+          
           ov_status = lo_instance->get_state( )->get_name( ).
+          
+          " Exit if we've reached the desired state
           IF ov_status = iv_required_status.
             EXIT.
           ENDIF.
+          
         CATCH /aws1/cx_rt_generic.
           " Instance not found or error - continue waiting
           CONTINUE.
       ENDTRY.
     ENDDO.
+    
     " If status is still initial, set to unknown
     IF ov_status IS INITIAL.
       ov_status = 'unknown'.
