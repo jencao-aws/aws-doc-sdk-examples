@@ -220,6 +220,8 @@ language = {
                 "pinpoint": "sap-abap/services/ppt",
                 "pinpoint-sms-voice": "sap-abap/services/pps",
                 "polly": "sap-abap/services/ply",
+                "redshift": "sap-abap/services/rsh",
+                # "redshift": "sap-abap/services/rsd",
                 "rekognition": "sap-abap/services/rek",
                 "route53-recovery-cluster": "sap-abap/services/r5v",
                 "sagemaker": "sap-abap/services/sgm",
