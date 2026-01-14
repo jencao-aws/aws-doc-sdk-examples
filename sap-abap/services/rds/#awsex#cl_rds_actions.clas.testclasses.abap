@@ -26,7 +26,7 @@ CLASS ltc_awsex_cl_rds_actions DEFINITION FOR TESTING DURATION LONG RISK LEVEL D
 
     " Engine version and instance option tests
     METHODS: describe_db_engine_versions FOR TESTING RAISING /aws1/cx_rt_generic,
-      descrorderabledbinstopts FOR TESTING RAISING /aws1/cx_rt_generic.
+      descr_orderable_db_inst_opts FOR TESTING RAISING /aws1/cx_rt_generic.
 
     CLASS-METHODS class_setup RAISING /aws1/cx_rt_generic.
     CLASS-METHODS class_teardown RAISING /aws1/cx_rt_generic.
@@ -503,6 +503,7 @@ CLASS ltc_awsex_cl_rds_actions IMPLEMENTATION.
     ENDTRY.
   ENDMETHOD.
 
+<<<<<<< HEAD
   METHOD delete_parameter_group.
     TRY.
         " Delete the second parameter group created in create_parameter_group test
@@ -524,6 +525,25 @@ CLASS ltc_awsex_cl_rds_actions IMPLEMENTATION.
           CATCH /aws1/cx_rdsdbprmgrnotfndfault.
             " Expected - parameter group successfully deleted
         ENDTRY.
+=======
+  METHOD descr_orderable_db_inst_opts.
+    DATA lo_result TYPE REF TO /aws1/cl_rdsorderabledbinsto00.
+
+    ao_rds_actions->descr_orderable_db_inst_opts(
+      EXPORTING
+        iv_engine        = av_engine
+        iv_engineversion = av_engine_version
+      IMPORTING
+        oo_result = lo_result ).
+
+    cl_abap_unit_assert=>assert_bound(
+      act = lo_result
+      msg = 'Result should not be initial' ).
+
+    cl_abap_unit_assert=>assert_not_initial(
+      act = lo_result->get_orderabledbinstoptions( )
+      msg = 'Orderable options should not be empty' ).
+>>>>>>> 91845e093 (fixing unit test name)
 
       CATCH /aws1/cx_rt_generic INTO DATA(lo_exception).
         " Skip if cluster not found

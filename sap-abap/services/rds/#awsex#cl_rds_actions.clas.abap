@@ -6,7 +6,7 @@ CLASS /awsex/cl_rds_actions DEFINITION
   CREATE PUBLIC .
 
   PUBLIC SECTION.
-    METHODS descr_db_clust_param_groups
+    METHODS describe_db_cluster_parameter_groups
       IMPORTING
         !iv_param_group_name        TYPE /aws1/rdsstring
       RETURNING
@@ -14,7 +14,7 @@ CLASS /awsex/cl_rds_actions DEFINITION
       RAISING
         /aws1/cx_rt_generic.
 
-    METHODS create_db_clust_param_group
+    METHODS create_db_cluster_parameter_group
       IMPORTING
         !iv_param_group_name        TYPE /aws1/rdsstring
         !iv_param_group_family      TYPE /aws1/rdsstring
@@ -24,13 +24,13 @@ CLASS /awsex/cl_rds_actions DEFINITION
       RAISING
         /aws1/cx_rt_generic.
 
-    METHODS delete_db_clust_param_group
+    METHODS delete_db_cluster_parameter_group
       IMPORTING
         !iv_param_group_name        TYPE /aws1/rdsstring
       RAISING
         /aws1/cx_rt_generic.
 
-    METHODS descr_db_cluster_parameters
+    METHODS describe_db_cluster_parameters
       IMPORTING
         !iv_param_group_name        TYPE /aws1/rdsstring
         !iv_name_prefix             TYPE /aws1/rdsstring OPTIONAL
@@ -40,7 +40,7 @@ CLASS /awsex/cl_rds_actions DEFINITION
       RAISING
         /aws1/cx_rt_generic.
 
-    METHODS modify_db_clust_param_group
+    METHODS modify_db_cluster_parameter_group
       IMPORTING
         !iv_param_group_name        TYPE /aws1/rdsstring
         !it_update_parameters       TYPE /aws1/cl_rdsparameter=>tt_parameterslist
@@ -96,6 +96,25 @@ CLASS /awsex/cl_rds_actions DEFINITION
       RAISING
         /aws1/cx_rt_generic.
 
+    " Create a DB snapshot
+    METHODS create_db_snapshot
+      IMPORTING
+        !iv_dbsnapshotidentifier TYPE /aws1/rdsstring
+        !iv_dbinstanceidentifier TYPE /aws1/rdsstring
+      EXPORTING
+        !oo_result               TYPE REF TO /aws1/cl_rdscreatedbsnapresult
+      RAISING
+        /aws1/cx_rt_generic.
+
+    " Get a DB snapshot
+    METHODS describe_db_snapshots
+      IMPORTING
+        !iv_dbsnapshotidentifier TYPE /aws1/rdsstring
+      EXPORTING
+        !oo_result               TYPE REF TO /aws1/cl_rdsdbsnapshotmessage
+      RAISING
+        /aws1/cx_rt_generic.
+
     " Get database engine versions
     METHODS describe_db_engine_versions
       IMPORTING
@@ -107,12 +126,48 @@ CLASS /awsex/cl_rds_actions DEFINITION
         /aws1/cx_rt_generic.
 
     " Get orderable DB instance options
-    METHODS descr_orderable_db_inst_opts
+    METHODS descrorderabledbinstopts
       IMPORTING
         !iv_engine        TYPE /aws1/rdsstring
         !iv_engineversion TYPE /aws1/rdsstring
       EXPORTING
         !oo_result        TYPE REF TO /aws1/cl_rdsorderabledbinsto00
+      RAISING
+        /aws1/cx_rt_generic.
+
+    " Get a DB instance
+    METHODS describe_db_instances
+      IMPORTING
+        !iv_dbinstanceidentifier TYPE /aws1/rdsstring
+      EXPORTING
+        !oo_result               TYPE REF TO /aws1/cl_rdsdbinstancemessage
+      RAISING
+        /aws1/cx_rt_generic.
+
+    " Create a DB instance
+    METHODS create_db_instance
+      IMPORTING
+        !iv_dbname               TYPE /aws1/rdsstring
+        !iv_dbinstanceidentifier TYPE /aws1/rdsstring
+        !iv_dbparametergroupname TYPE /aws1/rdsstring
+        !iv_engine               TYPE /aws1/rdsstring
+        !iv_engineversion        TYPE /aws1/rdsstring
+        !iv_dbinstanceclass      TYPE /aws1/rdsstring
+        !iv_storagetype          TYPE /aws1/rdsstring
+        !iv_allocatedstorage     TYPE /aws1/rdsintegeroptional
+        !iv_masterusername       TYPE /aws1/rdsstring
+        !iv_masteruserpassword   TYPE /aws1/rdssensitivestring
+      EXPORTING
+        !oo_result               TYPE REF TO /aws1/cl_rdscreatedbinstresult
+      RAISING
+        /aws1/cx_rt_generic.
+
+    " Delete a DB instance
+    METHODS delete_db_instance
+      IMPORTING
+        !iv_dbinstanceidentifier TYPE /aws1/rdsstring
+      EXPORTING
+        !oo_result               TYPE REF TO /aws1/cl_rdsdeletedbinstresult
       RAISING
         /aws1/cx_rt_generic.
   PROTECTED SECTION.
@@ -141,13 +196,13 @@ CLASS /AWSEX/CL_RDS_ACTIONS IMPLEMENTATION.
     " snippet-end:[rds.abapv1.describe_db_parameter_groups]
   ENDMETHOD.
 
-  METHOD descr_db_clust_param_groups.
+  METHOD describe_db_cluster_parameter_groups.
     CONSTANTS cv_pfl TYPE /aws1/rt_profile_id VALUE 'ZCODE_DEMO'.
 
     DATA(lo_session) = /aws1/cl_rt_session_aws=>create( cv_pfl ).
     DATA(lo_rds) = /aws1/cl_rds_factory=>create( lo_session ).
 
-    " snippet-start:[rds.abapv1.descr_db_clust_param_groups]
+    " snippet-start:[rds.abapv1.describe_db_cluster_parameter_groups]
     TRY.
         DATA(lo_output) = lo_rds->describedbclusterparamgroups(
           iv_dbclusterparamgroupname = iv_param_group_name
@@ -158,7 +213,7 @@ CLASS /AWSEX/CL_RDS_ACTIONS IMPLEMENTATION.
         ENDIF.
       CATCH /aws1/cx_rdsdbprmgrnotfndfault.
     ENDTRY.
-    " snippet-end:[rds.abapv1.descr_db_clust_param_groups]
+    " snippet-end:[rds.abapv1.describe_db_cluster_parameter_groups]
   ENDMETHOD.
 
   METHOD create_db_parameter_group.
@@ -186,13 +241,13 @@ CLASS /AWSEX/CL_RDS_ACTIONS IMPLEMENTATION.
   ENDMETHOD.
 
 
-  METHOD create_db_clust_param_group.
+  METHOD create_db_cluster_parameter_group.
     CONSTANTS cv_pfl TYPE /aws1/rt_profile_id VALUE 'ZCODE_DEMO'.
 
     DATA(lo_session) = /aws1/cl_rt_session_aws=>create( cv_pfl ).
     DATA(lo_rds) = /aws1/cl_rds_factory=>create( lo_session ).
 
-    " snippet-start:[rds.abapv1.create_db_clust_param_group]
+    " snippet-start:[rds.abapv1.create_db_cluster_parameter_group]
     TRY.
         DATA(lo_output) = lo_rds->createdbclusterparamgroup(
           iv_dbclusterparamgroupname = iv_param_group_name
@@ -207,7 +262,7 @@ CLASS /AWSEX/CL_RDS_ACTIONS IMPLEMENTATION.
         " Re-raise exception - quota exceeded
         RAISE EXCEPTION TYPE /aws1/cx_rdsdbprmgrquotaexcd00.
     ENDTRY.
-    " snippet-end:[rds.abapv1.create_db_clust_param_group]
+    " snippet-end:[rds.abapv1.create_db_cluster_parameter_group]
   ENDMETHOD.
 
   METHOD delete_db_parameter_group.
@@ -231,13 +286,13 @@ CLASS /AWSEX/CL_RDS_ACTIONS IMPLEMENTATION.
   ENDMETHOD.
 
 
-  METHOD delete_db_clust_param_group.
+  METHOD delete_db_cluster_parameter_group.
     CONSTANTS cv_pfl TYPE /aws1/rt_profile_id VALUE 'ZCODE_DEMO'.
 
     DATA(lo_session) = /aws1/cl_rt_session_aws=>create( cv_pfl ).
     DATA(lo_rds) = /aws1/cl_rds_factory=>create( lo_session ).
 
-    " snippet-start:[rds.abapv1.delete_db_clust_param_group]
+    " snippet-start:[rds.abapv1.delete_db_cluster_parameter_group]
     TRY.
         lo_rds->deletedbclusterparamgroup(
           iv_dbclusterparamgroupname = iv_param_group_name
@@ -249,7 +304,7 @@ CLASS /AWSEX/CL_RDS_ACTIONS IMPLEMENTATION.
         " Re-raise exception - invalid state
         RAISE EXCEPTION TYPE /aws1/cx_rdsinvdbprmgrstatef00.
     ENDTRY.
-    " snippet-end:[rds.abapv1.delete_db_clust_param_group]
+    " snippet-end:[rds.abapv1.delete_db_cluster_parameter_group]
   ENDMETHOD.
 
   METHOD describe_db_parameters.
@@ -273,13 +328,13 @@ CLASS /AWSEX/CL_RDS_ACTIONS IMPLEMENTATION.
     " snippet-end:[rds.abapv1.describe_db_parameters]
   ENDMETHOD.
 
-  METHOD descr_db_cluster_parameters.
+  METHOD describe_db_cluster_parameters.
     CONSTANTS cv_pfl TYPE /aws1/rt_profile_id VALUE 'ZCODE_DEMO'.
 
     DATA(lo_session) = /aws1/cl_rt_session_aws=>create( cv_pfl ).
     DATA(lo_rds) = /aws1/cl_rds_factory=>create( lo_session ).
 
-    " snippet-start:[rds.abapv1.descr_db_cluster_parameters]
+    " snippet-start:[rds.abapv1.describe_db_cluster_parameters]
     TRY.
         DATA lv_marker TYPE /aws1/rdsstring VALUE ''.
         DATA lt_all_parameters TYPE /aws1/cl_rdsparameter=>tt_parameterslist.
@@ -309,7 +364,7 @@ CLASS /AWSEX/CL_RDS_ACTIONS IMPLEMENTATION.
         " Re-raise exception - parameter group not found
         RAISE EXCEPTION TYPE /aws1/cx_rdsdbprmgrnotfndfault.
     ENDTRY.
-    " snippet-end:[rds.abapv1.descr_db_cluster_parameters]
+    " snippet-end:[rds.abapv1.describe_db_cluster_parameters]
   ENDMETHOD.
 
   METHOD modify_db_parameter_group.
@@ -337,13 +392,13 @@ CLASS /AWSEX/CL_RDS_ACTIONS IMPLEMENTATION.
     " snippet-end:[rds.abapv1.modify_db_parameter_group]
   ENDMETHOD.
 
-  METHOD modify_db_clust_param_group.
+  METHOD modify_db_cluster_parameter_group.
     CONSTANTS cv_pfl TYPE /aws1/rt_profile_id VALUE 'ZCODE_DEMO'.
 
     DATA(lo_session) = /aws1/cl_rt_session_aws=>create( cv_pfl ).
     DATA(lo_rds) = /aws1/cl_rds_factory=>create( lo_session ).
 
-    " snippet-start:[rds.abapv1.modify_db_clust_param_group]
+    " snippet-start:[rds.abapv1.modify_db_cluster_parameter_group]
     TRY.
         oo_result = lo_rds->modifydbclusterparamgroup(
           iv_dbclusterparamgroupname = iv_param_group_name
@@ -356,7 +411,51 @@ CLASS /AWSEX/CL_RDS_ACTIONS IMPLEMENTATION.
         " Re-raise exception - invalid state
         RAISE EXCEPTION TYPE /aws1/cx_rdsinvdbprmgrstatef00.
     ENDTRY.
-    " snippet-end:[rds.abapv1.modify_db_clust_param_group]
+    " snippet-end:[rds.abapv1.modify_db_cluster_parameter_group]
+  ENDMETHOD.
+
+  METHOD create_db_snapshot.
+    CONSTANTS cv_pfl TYPE /aws1/rt_profile_id VALUE 'ZCODE_DEMO'.
+
+    DATA(lo_session) = /aws1/cl_rt_session_aws=>create( cv_pfl ).
+    DATA(lo_rds) = /aws1/cl_rds_factory=>create( lo_session ).
+
+    " snippet-start:[rds.abapv1.create_db_snapshot]
+    " iv_dbsnapshotidentifier = 'mydbsnapshot-2024-01-15'
+    " iv_dbinstanceidentifier = 'mydbinstance'
+    TRY.
+        oo_result = lo_rds->createdbsnapshot(
+          iv_dbsnapshotidentifier = iv_dbsnapshotidentifier
+          iv_dbinstanceidentifier = iv_dbinstanceidentifier ).
+        MESSAGE 'DB snapshot created.' TYPE 'I'.
+      CATCH /aws1/cx_rdsdbinstnotfndfault.
+        MESSAGE 'DB instance not found.' TYPE 'I'.
+      CATCH /aws1/cx_rdsdbsnapalrdyexfault.
+        MESSAGE 'DB snapshot already exists.' TYPE 'I'.
+      CATCH /aws1/cx_rdsinvdbinststatefa00.
+        MESSAGE 'DB instance is in an invalid state.' TYPE 'I'.
+      CATCH /aws1/cx_rdssnapquotaexcdfault.
+        MESSAGE 'Snapshot quota exceeded.' TYPE 'I'.
+    ENDTRY.
+    " snippet-end:[rds.abapv1.create_db_snapshot]
+  ENDMETHOD.
+
+  METHOD describe_db_snapshots.
+    CONSTANTS cv_pfl TYPE /aws1/rt_profile_id VALUE 'ZCODE_DEMO'.
+
+    DATA(lo_session) = /aws1/cl_rt_session_aws=>create( cv_pfl ).
+    DATA(lo_rds) = /aws1/cl_rds_factory=>create( lo_session ).
+
+    " snippet-start:[rds.abapv1.describe_db_snapshots]
+    " iv_dbsnapshotidentifier = 'mydbsnapshot-2024-01-15'
+    TRY.
+        oo_result = lo_rds->describedbsnapshots(
+          iv_dbsnapshotidentifier = iv_dbsnapshotidentifier ).
+        MESSAGE 'DB snapshot retrieved.' TYPE 'I'.
+      CATCH /aws1/cx_rdsdbsnapnotfndfault.
+        MESSAGE 'DB snapshot not found.' TYPE 'I'.
+    ENDTRY.
+    " snippet-end:[rds.abapv1.describe_db_snapshots]
   ENDMETHOD.
 
   METHOD describe_db_engine_versions.
@@ -381,7 +480,7 @@ CLASS /AWSEX/CL_RDS_ACTIONS IMPLEMENTATION.
     " snippet-end:[rds.abapv1.describe_db_engine_versions]
   ENDMETHOD.
 
-  METHOD descr_orderable_db_inst_opts.
+  METHOD descrorderabledbinstopts.
     CONSTANTS cv_pfl TYPE /aws1/rt_profile_id VALUE 'ZCODE_DEMO'.
 
     DATA(lo_session) = /aws1/cl_rt_session_aws=>create( cv_pfl ).
