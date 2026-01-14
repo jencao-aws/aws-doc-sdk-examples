@@ -33,15 +33,15 @@ For prerequisites, see the [README](../../README.md#Prerequisites) in the `sap-a
 
 Code excerpts that show you how to call individual service functions.
 
-- [DeleteAlarms](#awsex#cl_cwt_actions.clas.abap#L113)
-- [DescribeAlarms](#awsex#cl_cwt_actions.clas.abap#L133)
-- [DescribeAlarmsForMetric](#awsex#cl_cwt_actions.clas.abap#L345)
-- [DisableAlarmActions](#awsex#cl_cwt_actions.clas.abap#L154)
-- [EnableAlarmActions](#awsex#cl_cwt_actions.clas.abap#L177)
-- [GetMetricStatistics](#awsex#cl_cwt_actions.clas.abap#L319)
-- [ListMetrics](#awsex#cl_cwt_actions.clas.abap#L200)
-- [PutMetricAlarm](#awsex#cl_cwt_actions.clas.abap#L222)
-- [PutMetricData](#awsex#cl_cwt_actions.clas.abap#L253)
+- [DeleteAlarms](%23awsex%23cl_cwt_actions.clas.abap#L113)
+- [DescribeAlarms](%23awsex%23cl_cwt_actions.clas.abap#L133)
+- [DescribeAlarmsForMetric](%23awsex%23cl_cwt_actions.clas.abap#L345)
+- [DisableAlarmActions](%23awsex%23cl_cwt_actions.clas.abap#L154)
+- [EnableAlarmActions](%23awsex%23cl_cwt_actions.clas.abap#L177)
+- [GetMetricStatistics](%23awsex%23cl_cwt_actions.clas.abap#L319)
+- [ListMetrics](%23awsex%23cl_cwt_actions.clas.abap#L200)
+- [PutMetricAlarm](%23awsex%23cl_cwt_actions.clas.abap#L222)
+- [PutMetricData](%23awsex%23cl_cwt_actions.clas.abap#L253)
 
 ### Scenarios
 

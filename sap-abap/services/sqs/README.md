@@ -33,15 +33,15 @@ For prerequisites, see the [README](../../README.md#Prerequisites) in the `sap-a
 
 Code excerpts that show you how to call individual service functions.
 
-- [CreateQueue](#awsex#cl_sqs_actions.clas.abap#L91)
-- [DeleteMessage](#awsex#cl_sqs_actions.clas.abap#L271)
-- [DeleteMessageBatch](#awsex#cl_sqs_actions.clas.abap#L292)
-- [DeleteQueue](#awsex#cl_sqs_actions.clas.abap#L110)
-- [GetQueueUrl](#awsex#cl_sqs_actions.clas.abap#L125)
-- [ListQueues](#awsex#cl_sqs_actions.clas.abap#L142)
-- [ReceiveMessage](#awsex#cl_sqs_actions.clas.abap#L203)
-- [SendMessage](#awsex#cl_sqs_actions.clas.abap#L221)
-- [SendMessageBatch](#awsex#cl_sqs_actions.clas.abap#L242)
+- [CreateQueue](%23awsex%23cl_sqs_actions.clas.abap#L91)
+- [DeleteMessage](%23awsex%23cl_sqs_actions.clas.abap#L271)
+- [DeleteMessageBatch](%23awsex%23cl_sqs_actions.clas.abap#L292)
+- [DeleteQueue](%23awsex%23cl_sqs_actions.clas.abap#L110)
+- [GetQueueUrl](%23awsex%23cl_sqs_actions.clas.abap#L125)
+- [ListQueues](%23awsex%23cl_sqs_actions.clas.abap#L142)
+- [ReceiveMessage](%23awsex%23cl_sqs_actions.clas.abap#L203)
+- [SendMessage](%23awsex%23cl_sqs_actions.clas.abap#L221)
+- [SendMessageBatch](%23awsex%23cl_sqs_actions.clas.abap#L242)
 
 ### Scenarios
 
