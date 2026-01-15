@@ -128,10 +128,10 @@ def writeme(
         for language_and_version in languages:
             if language_and_version == Language.all:  # type: ignore
                 continue
-            (language, version) = language_and_version.value.split(":")
+            (language, version) = language_and_version.split(":")
             id = f"{language}:{version}:{service}"
             try:
-                renderer.set_example(service.value, language, int(version), safe)
+                renderer.set_example(service, language, int(version), safe)
 
                 logging.debug("Rendering %s", id)
                 render_status = renderer.render()
