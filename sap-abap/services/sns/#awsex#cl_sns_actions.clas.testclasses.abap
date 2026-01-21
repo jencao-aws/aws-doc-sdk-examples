@@ -12,10 +12,6 @@ CLASS ltc_awsex_cl_sns_actions DEFINITION FOR TESTING DURATION SHORT RISK LEVEL 
     CLASS-DATA ao_session TYPE REF TO /aws1/cl_rt_session_base.
     CLASS-DATA ao_sns_actions TYPE REF TO /awsex/cl_sns_actions.
     CLASS-DATA ao_sqs TYPE REF TO /aws1/if_sqs.
-    CLASS-DATA ao_sns TYPE REF TO /aws1/if_sns.
-    CLASS-DATA ao_session TYPE REF TO /aws1/cl_rt_session_base.
-    CLASS-DATA ao_sns_actions TYPE REF TO /awsex/cl_sns_actions.
-    CLASS-DATA ao_sqs TYPE REF TO /aws1/if_sqs.
 
     METHODS: create_topic FOR TESTING RAISING /aws1/cx_rt_generic,
       list_topics FOR TESTING RAISING /aws1/cx_rt_generic,
@@ -56,7 +52,6 @@ ENDCLASS.
 CLASS ltc_awsex_cl_sns_actions IMPLEMENTATION.
 
   METHOD class_setup.
-  METHOD class_setup.
     ao_session = /aws1/cl_rt_session_aws=>create( iv_profile_id = cv_pfl ).
     ao_sns = /aws1/cl_sns_factory=>create( ao_session ).
     ao_sns_actions = NEW /awsex/cl_sns_actions( ).
@@ -87,7 +82,6 @@ CLASS ltc_awsex_cl_sns_actions IMPLEMENTATION.
     ao_sns->deletetopic( iv_topicarn = lo_result->get_topicarn( ) ).
   ENDMETHOD.
 
-
   METHOD delete_topic.
     DATA(lv_uuid) = get_uuid( ).
     DATA(lv_topic_name) = |code-example-delete-topic-{ lv_uuid }|.
@@ -103,7 +97,6 @@ CLASS ltc_awsex_cl_sns_actions IMPLEMENTATION.
       iv_exp = abap_false
       iv_msg = |Topic { lv_topic_name } should have been deleted| ).
   ENDMETHOD.
-
 
   METHOD get_topic_attributes.
     DATA(lv_uuid) = get_uuid( ).
@@ -125,7 +118,6 @@ CLASS ltc_awsex_cl_sns_actions IMPLEMENTATION.
        msg = |Couldn't retrive attributes for topic { lv_topic_name }| ).
     ao_sns->deletetopic( iv_topicarn = lv_topic_arn ).
   ENDMETHOD.
-
 
   METHOD subscribe_email.
     DATA(lv_uuid) = get_uuid( ).
@@ -252,7 +244,6 @@ CLASS ltc_awsex_cl_sns_actions IMPLEMENTATION.
     ao_sns->deletetopic( iv_topicarn = lv_topic_arn ).
   ENDMETHOD.
 
-
   METHOD publish_to_topic.
     DATA(lv_uuid) = get_uuid( ).
     DATA(lv_topic_name) = |code-ex-pub-top-{ lv_uuid }|.
@@ -270,7 +261,6 @@ CLASS ltc_awsex_cl_sns_actions IMPLEMENTATION.
                  msg = |Failed to publish message SNS topint  { lv_topic_arn }| ).
     ao_sns->deletetopic( iv_topicarn = lv_topic_arn ).
   ENDMETHOD.
-
 
   METHOD set_topic_attributes.
     DATA(lv_uuid) = get_uuid( ).

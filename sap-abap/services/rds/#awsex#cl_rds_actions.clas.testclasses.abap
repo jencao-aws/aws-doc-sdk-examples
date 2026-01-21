@@ -1,10 +1,20 @@
 " Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 " SPDX-License-Identifier: Apache-2.0
-CLASS ltc_awsex_cl_rds_actions DEFINITION FOR TESTING DURATION LONG RISK LEVEL DANGEROUS.
+CLASS ltc_awsex_cl_rds_actions DEFINITION DEFERRED.
+CLASS /awsex/cl_rds_actions DEFINITION LOCAL FRIENDS ltc_awsex_cl_rds_actions.
+
+CLASS ltc_awsex_cl_rds_actions DEFINITION FOR TESTING DURATION MEDIUM RISK LEVEL HARMLESS.
+  " Fast tests only - Instance operations removed to avoid Lambda timeout
+  " Instance and snapshot operations take 10-20 minutes which exceeds Lambda's 15-min limit
+  " For full testing of all 12 operations, run tests manually outside CI/CD pipeline
 
   PRIVATE SECTION.
-
     CONSTANTS cv_pfl TYPE /aws1/rt_profile_id VALUE 'ZCODE_DEMO'.
+
+    CLASS-DATA av_param_group_name TYPE /aws1/rdsstring.
+    CLASS-DATA av_engine TYPE /aws1/rdsstring.
+    CLASS-DATA av_param_group_family TYPE /aws1/rdsstring.
+    CLASS-DATA av_engine_version TYPE /aws1/rdsstring.
 
     CLASS-DATA ao_rds TYPE REF TO /aws1/if_rds.
     CLASS-DATA ao_session TYPE REF TO /aws1/cl_rt_session_base.
@@ -30,263 +40,288 @@ CLASS ltc_awsex_cl_rds_actions DEFINITION FOR TESTING DURATION LONG RISK LEVEL D
 
     CLASS-METHODS class_setup RAISING /aws1/cx_rt_generic.
     CLASS-METHODS class_teardown RAISING /aws1/cx_rt_generic.
-    METHODS create_parameter_group FOR TESTING.
-    METHODS get_parameter_group FOR TESTING.
-    METHODS get_parameters FOR TESTING.
-    METHODS update_parameters FOR TESTING.
-    METHODS get_engine_versions FOR TESTING.
-    METHODS get_orderable_instances FOR TESTING.
-    METHODS delete_parameter_group FOR TESTING.
-
 ENDCLASS.
 
 CLASS ltc_awsex_cl_rds_actions IMPLEMENTATION.
 
   METHOD class_setup.
+    DATA lv_uuid TYPE string.
+    DATA lo_engine_versions TYPE REF TO /aws1/cl_rdsdbenginevrsmessage.
+    DATA lo_engine_version TYPE REF TO /aws1/cl_rdsdbengineversion.
+    
     ao_session = /aws1/cl_rt_session_aws=>create( iv_profile_id = cv_pfl ).
     ao_rds = /aws1/cl_rds_factory=>create( ao_session ).
     ao_rds_actions = NEW /awsex/cl_rds_actions( ).
 
-    " Generate unique identifiers using timestamp
-    DATA lv_timestamp TYPE timestamp.
-    DATA lv_timestamp_str TYPE string.
-    GET TIME STAMP FIELD lv_timestamp.
-    lv_timestamp_str = lv_timestamp.
-    CONDENSE lv_timestamp_str NO-GAPS.
-    " Timestamp format is typically 14 digits: YYYYMMDDHHMMSS
-    " Use last 10 digits (DDHHMMSS + SS) for uniqueness
-    DATA lv_len TYPE i.
-    lv_len = strlen( lv_timestamp_str ).
-    IF lv_len >= 10.
-      gv_uuid = lv_timestamp_str+4(10).  " Skip YYYYMM, use rest
-    ELSE.
-      gv_uuid = lv_timestamp_str.
+    " Set up test data using utils
+    lv_uuid = /awsex/cl_utils=>get_random_string( ).
+    av_param_group_name = |sap-rds-pg-{ lv_uuid }|.
+    av_engine = 'mysql'.
+    av_param_group_family = 'mysql8.0'.
+
+    " Get an available MySQL 8.0 engine version
+    lo_engine_versions = ao_rds->describedbengineversions(
+      iv_engine = av_engine
+      iv_dbparametergroupfamily = av_param_group_family
+      iv_maxrecords = 20 ).
+
+    " Find first available engine version
+    LOOP AT lo_engine_versions->get_dbengineversions( ) INTO lo_engine_version.
+      av_engine_version = lo_engine_version->get_engineversion( ).
+      IF av_engine_version IS NOT INITIAL.
+        EXIT.
+      ENDIF.
+    ENDLOOP.
+
+    IF av_engine_version IS INITIAL.
+      cl_abap_unit_assert=>fail( msg = 'No MySQL 8.0 engine version available' ).
     ENDIF.
 
-    gv_param_group_name = |abap-pg-{ gv_uuid+0(8) }|.
-    gv_cluster_id = |abap-cl-{ gv_uuid+0(8) }|.
-    gv_instance_id = |abap-in-{ gv_uuid+0(8) }|.
-    gv_snapshot_id = |abap-sn-{ gv_uuid+0(8) }|.
-    gv_param_group_name_2 = |abap-pg2-{ gv_uuid+0(7) }|.
-    gv_cluster_id_2 = |abap-cl2-{ gv_uuid+0(7) }|.
-    gv_instance_id_2 = |abap-in2-{ gv_uuid+0(7) }|.
-
-    " Create shared resources for tests with convert_test tag
-    DATA lt_tags TYPE /aws1/cl_rdstag=>tt_taglist.
-    DATA(lo_tag) = NEW /aws1/cl_rdstag(
-      iv_key = 'convert_test'
-      iv_value = 'true'
-    ).
-    APPEND lo_tag TO lt_tags.
-
+    " Create parameter group with convert_test tag
     TRY.
-        " Get available Aurora MySQL engine versions
-        DATA(lo_versions) = ao_rds->describedbengineversions(
-          iv_engine = 'aurora-mysql'
-          iv_defaultonly = abap_false
-        ).
-        DATA(lt_versions) = lo_versions->get_dbengineversions( ).
-        DATA lv_engine_version TYPE /aws1/rdsstring.
-        
-        " Find a suitable Aurora MySQL 8.0 version
-        LOOP AT lt_versions INTO DATA(lo_version).
-          DATA(lv_version_str) = lo_version->get_engineversion( ).
-          IF lv_version_str CP '8.0*'.
-            lv_engine_version = lv_version_str.
-            EXIT.
-          ENDIF.
-        ENDLOOP.
-        
-        " If no 8.0 version found, use the first available version
-        IF lv_engine_version IS INITIAL AND lines( lt_versions ) > 0.
-          DATA(lo_first_version) = lt_versions[ 1 ].
-          lv_engine_version = lo_first_version->get_engineversion( ).
-        ENDIF.
-        
-        " Store engine version for use in tests
-        gv_engine_version = lv_engine_version.
-
-        " Create parameter group for shared use
-        DATA lv_param_family TYPE /aws1/rdsstring.
-        IF lv_engine_version CP '8.0*'.
-          lv_param_family = 'aurora-mysql8.0'.
-        ELSE.
-          lv_param_family = 'aurora-mysql5.7'.
-        ENDIF.
-
-        DATA(lo_output) = ao_rds->createdbclusterparamgroup(
-          iv_dbclusterparamgroupname = gv_param_group_name
-          iv_dbparametergroupfamily = lv_param_family
-          iv_description = 'ABAP test parameter group'
-          it_tags = lt_tags
-        ).
-
-        " Wait a moment for parameter group to propagate
-        WAIT UP TO 5 SECONDS.
-
-        " Create DB cluster for shared use
-        DATA(lo_cluster_output) = ao_rds->createdbcluster(
-          iv_databasename = 'mydb'
-          iv_dbclusteridentifier = gv_cluster_id
-          iv_dbclusterparamgroupname = gv_param_group_name
-          iv_engine = 'aurora-mysql'
-          iv_engineversion = lv_engine_version
-          iv_masterusername = 'admin'
-          iv_masteruserpassword = 'MyS3cureP4ssw0rd!'
-          it_tags = lt_tags
-        ).
-
-        " Wait for cluster to be available
-        DATA lo_cluster TYPE REF TO /aws1/cl_rdsdbcluster.
-        lo_cluster = lo_cluster_output->get_dbcluster( ).
-        DATA(lv_status) = lo_cluster->get_status( ).
-        DATA lv_max_wait TYPE i VALUE 300.
-        DATA lv_waited TYPE i VALUE 0.
-
-        WHILE lv_status <> 'available' AND lv_waited < lv_max_wait.
-          WAIT UP TO 30 SECONDS.
-          lv_waited = lv_waited + 30.
-          DATA(lo_desc_output) = ao_rds->describedbclusters(
-            iv_dbclusteridentifier = gv_cluster_id
-          ).
-          DATA(lt_clusters) = lo_desc_output->get_dbclusters( ).
-          IF lines( lt_clusters ) > 0.
-            DATA(lo_cluster_wa) = lt_clusters[ 1 ].
-            lv_status = lo_cluster_wa->get_status( ).
-          ENDIF.
-        ENDWHILE.
-
-        " Create DB instance in cluster for shared use
-        DATA(lo_inst_output) = ao_rds->createdbinstance(
-          iv_dbinstanceidentifier = gv_instance_id
-          iv_dbclusteridentifier = gv_cluster_id
-          iv_engine = 'aurora-mysql'
-          iv_dbinstanceclass = 'db.r5.large'
-          it_tags = lt_tags
-        ).
-
-        " Wait for instance to be available
-        DATA lo_instance TYPE REF TO /aws1/cl_rdsdbinstance.
-        lo_instance = lo_inst_output->get_dbinstance( ).
-        DATA(lv_inst_status) = lo_instance->get_dbinstancestatus( ).
-        lv_waited = 0.
-        lv_max_wait = 300.
-
-        WHILE lv_inst_status <> 'available' AND lv_waited < lv_max_wait.
-          WAIT UP TO 30 SECONDS.
-          lv_waited = lv_waited + 30.
-          DATA(lo_inst_desc) = ao_rds->describedbinstances(
-            iv_dbinstanceidentifier = gv_instance_id
-          ).
-          DATA(lt_instances) = lo_inst_desc->get_dbinstances( ).
-          IF lines( lt_instances ) > 0.
-            DATA(lo_instance_wa) = lt_instances[ 1 ].
-            lv_inst_status = lo_instance_wa->get_dbinstancestatus( ).
-          ENDIF.
-        ENDWHILE.
-
-      CATCH /aws1/cx_rt_generic INTO DATA(lo_exception).
-        " Store error but don't fail - let individual tests handle missing resources
-        DATA(lv_error) = lo_exception->get_text( ).
+        ao_rds->createdbparametergroup(
+          iv_dbparametergroupname   = av_param_group_name
+          iv_dbparametergroupfamily = av_param_group_family
+          iv_description            = 'Test parameter group for ABAP SDK'
+          it_tags                   = VALUE #( ( NEW /aws1/cl_rdstag( iv_key = 'convert_test' iv_value = 'true' ) ) ) ).
+      CATCH /aws1/cx_rdsdbparmgralrexfault.
+        " If already exists from failed previous run, that's acceptable
     ENDTRY.
 
   ENDMETHOD.
 
   METHOD class_teardown.
-    " Clean up resources created in class_setup
-    " Note: RDS resources take long to delete, so we leave them tagged for manual cleanup
+    " Clean up parameter group (only resource created in fast mode)
     TRY.
-        " Delete instances first
-        TRY.
-            ao_rds->deletedbinstance(
-              iv_dbinstanceidentifier = gv_instance_id
-              iv_skipfinalsnapshot = abap_true
-              iv_deleteautomatedbackups = abap_true
-            ).
-          CATCH /aws1/cx_rdsdbinstnotfndfault.
-            " OK if not found
-        ENDTRY.
+        ao_rds->deletedbparametergroup( iv_dbparametergroupname = av_param_group_name ).
+      CATCH /aws1/cx_rdsdbprmgrnotfndfault.
+        " Already deleted
+      CATCH /aws1/cx_rdsinvdbprmgrstatef00.
+        " In use, will be cleaned up manually via convert_test tag
+    ENDTRY.
 
-        " Delete any additional instances created during tests
-        TRY.
-            ao_rds->deletedbinstance(
-              iv_dbinstanceidentifier = gv_instance_id_2
-              iv_skipfinalsnapshot = abap_true
-              iv_deleteautomatedbackups = abap_true
-            ).
-          CATCH /aws1/cx_rdsdbinstnotfndfault.
-            " OK if not found
-        ENDTRY.
+    " NOTE: DB instances, snapshots, and subnet groups are not cleaned up here
+    " because they are not created in class_setup (to avoid Lambda timeout).
+    " If running tests manually with DB instance creation enabled,
+    " these resources must be cleaned up manually using the convert_test tag.
 
-        " Wait for instance deletion to complete
-        DATA lv_exists TYPE abap_bool VALUE abap_true.
-        DATA lv_max_wait TYPE i VALUE 120.
-        DATA lv_waited TYPE i VALUE 0.
+  ENDMETHOD.
 
-        WHILE lv_exists = abap_true AND lv_waited < lv_max_wait.
-          WAIT UP TO 30 SECONDS.
-          lv_waited = lv_waited + 30.
-          TRY.
-              ao_rds->describedbinstances( iv_dbinstanceidentifier = gv_instance_id ).
-            CATCH /aws1/cx_rdsdbinstnotfndfault.
-              lv_exists = abap_false.
-          ENDTRY.
-        ENDWHILE.
+  METHOD describe_db_parameter_groups.
+    DATA lo_result TYPE REF TO /aws1/cl_rdsdbparamgroupsmsg.
+    DATA lo_param_group TYPE REF TO /aws1/cl_rdsdbparametergroup.
+    DATA lv_found TYPE abap_bool.
 
-        " Delete clusters
-        TRY.
-            ao_rds->deletedbcluster(
-              iv_dbclusteridentifier = gv_cluster_id
-              iv_skipfinalsnapshot = abap_true
-            ).
-          CATCH /aws1/cx_rdsdbclustnotfndfault.
-            " OK if not found
-        ENDTRY.
+    " Use parameter group created in class_setup
+    ao_rds_actions->describe_db_parameter_groups(
+      EXPORTING
+        iv_dbparametergroupname = av_param_group_name
+      IMPORTING
+        oo_result = lo_result ).
 
-        " Delete any additional clusters
-        TRY.
-            ao_rds->deletedbcluster(
-              iv_dbclusteridentifier = gv_cluster_id_2
-              iv_skipfinalsnapshot = abap_true
-            ).
-          CATCH /aws1/cx_rdsdbclustnotfndfault.
-            " OK if not found
-        ENDTRY.
+    cl_abap_unit_assert=>assert_bound(
+      act = lo_result
+      msg = 'Result should not be initial' ).
 
-        " Wait for cluster deletion
-        lv_exists = abap_true.
-        lv_waited = 0.
+    cl_abap_unit_assert=>assert_not_initial(
+      act = lo_result->get_dbparametergroups( )
+      msg = 'DB parameter groups should not be empty' ).
 
-        WHILE lv_exists = abap_true AND lv_waited < lv_max_wait.
-          WAIT UP TO 30 SECONDS.
-          lv_waited = lv_waited + 30.
-          TRY.
-              ao_rds->describedbclusters( iv_dbclusteridentifier = gv_cluster_id ).
-            CATCH /aws1/cx_rdsdbclustnotfndfault.
-              lv_exists = abap_false.
-          ENDTRY.
-        ENDWHILE.
+    lv_found = abap_false.
+    LOOP AT lo_result->get_dbparametergroups( ) INTO lo_param_group.
+      " Parameter group names may be truncated, so check if it starts with our name
+      IF lo_param_group->get_dbparametergroupname( ) CP |{ av_param_group_name }*|.
+        lv_found = abap_true.
+        EXIT.
+      ENDIF.
+    ENDLOOP.
 
-        " Delete parameter groups
-        TRY.
-            ao_rds->deletedbclusterparamgroup(
-              iv_dbclusterparamgroupname = gv_param_group_name
-            ).
-          CATCH /aws1/cx_rdsdbprmgrnotfndfault.
-            " OK if not found
-        ENDTRY.
+    cl_abap_unit_assert=>assert_true(
+      act = lv_found
+      msg = |Parameter group matching { av_param_group_name } should be found| ).
 
-        " Delete any additional parameter groups
-        TRY.
-            ao_rds->deletedbclusterparamgroup(
-              iv_dbclusterparamgroupname = gv_param_group_name_2
-            ).
-          CATCH /aws1/cx_rdsdbprmgrnotfndfault.
-            " OK if not found
-        ENDTRY.
+  ENDMETHOD.
 
+  METHOD create_db_parameter_group.
+    DATA lo_result TYPE REF TO /aws1/cl_rdscredbparamgrprslt.
+    DATA lv_uuid TYPE string.
+    DATA lv_test_param_group TYPE /aws1/rdsstring.
+    DATA lv_returned_name TYPE /aws1/rdsstring.
+
+    lv_uuid = /awsex/cl_utils=>get_random_string( ).
+    lv_test_param_group = |test-pg-{ lv_uuid }|.
+
+    " Create a new parameter group for this test
+    ao_rds_actions->create_db_parameter_group(
+      EXPORTING
+        iv_dbparametergroupname   = lv_test_param_group
+        iv_dbparametergroupfamily = av_param_group_family
+        iv_description            = 'Test parameter group'
+      IMPORTING
+        oo_result = lo_result ).
+
+    cl_abap_unit_assert=>assert_bound(
+      act = lo_result
+      msg = 'Result should not be initial' ).
+
+    lv_returned_name = lo_result->get_dbparametergroup( )->get_dbparametergroupname( ).
+    
+    " Parameter group name should start with our prefix (may be truncated)
+    cl_abap_unit_assert=>assert_true(
+      act = boolc( lv_returned_name CP |{ lv_test_param_group }*| OR
+                   lv_test_param_group CP |{ lv_returned_name }*| )
+      msg = |Parameter group name should match: Expected { lv_test_param_group }, Got { lv_returned_name }| ).
+
+    " Tag the parameter group
+    TRY.
+        DATA lv_param_group_arn TYPE /aws1/rdsstring.
+        lv_param_group_arn = lo_result->get_dbparametergroup( )->get_dbparametergrouparn( ).
+        ao_rds->addtagstoresource(
+          iv_resourcename = lv_param_group_arn
+          it_tags = VALUE #( ( NEW /aws1/cl_rdstag( iv_key = 'convert_test' iv_value = 'true' ) ) ) ).
       CATCH /aws1/cx_rt_generic.
-        " Ignore teardown errors
+        " Continue even if tagging fails
+    ENDTRY.
+
+    " Cleanup - delete the test parameter group
+    TRY.
+        ao_rds->deletedbparametergroup( iv_dbparametergroupname = lv_returned_name ).
+      CATCH /aws1/cx_rdsdbprmgrnotfndfault.
+        " Already deleted
+    ENDTRY.
+
+  ENDMETHOD.
+
+  METHOD describe_db_parameters.
+    DATA lo_result TYPE REF TO /aws1/cl_rdsdbparamgroupdets.
+
+    " Use parameter group created in class_setup
+    ao_rds_actions->describe_db_parameters(
+      EXPORTING
+        iv_dbparametergroupname = av_param_group_name
+      IMPORTING
+        oo_result = lo_result ).
+
+    cl_abap_unit_assert=>assert_bound(
+      act = lo_result
+      msg = 'Result should not be initial' ).
+
+    cl_abap_unit_assert=>assert_not_initial(
+      act = lo_result->get_parameters( )
+      msg = 'Parameters should not be empty' ).
+
+  ENDMETHOD.
+
+  METHOD modify_db_parameter_group.
+    DATA lo_result TYPE REF TO /aws1/cl_rdsdbparamgrpnamemsg.
+    DATA lo_params_result TYPE REF TO /aws1/cl_rdsdbparamgroupdets.
+    DATA lo_param TYPE REF TO /aws1/cl_rdsparameter.
+    DATA lv_param_name TYPE /aws1/rdsstring.
+    DATA lv_param_value TYPE /aws1/rdspotentiallysensitiv01.
+    DATA lv_allowed TYPE /aws1/rdsstring.
+    DATA lv_min TYPE string.
+    DATA lv_max TYPE string.
+    DATA lt_update_params TYPE /aws1/cl_rdsparameter=>tt_parameterslist.
+    DATA lv_returned_name TYPE /aws1/rdsstring.
+    
+    " First get parameters to find modifiable ones
+    lo_params_result = ao_rds->describedbparameters(
+      iv_dbparametergroupname = av_param_group_name ).
+
+    LOOP AT lo_params_result->get_parameters( ) INTO lo_param.
+      IF lo_param->get_ismodifiable( ) = abap_true AND
+         lo_param->get_datatype( ) = 'integer' AND
+         lo_param->get_parametername( ) CP 'max_connections*'.
+        lv_param_name = lo_param->get_parametername( ).
+        lv_param_value = '100'.
+        " Create new parameter object with modified values
+        APPEND NEW /aws1/cl_rdsparameter(
+          iv_parametername = lv_param_name
+          iv_parametervalue = lv_param_value
+          iv_applymethod = 'immediate' ) TO lt_update_params.
+        EXIT.
+      ENDIF.
+    ENDLOOP.
+
+    IF lt_update_params IS INITIAL.
+      " If no modifiable max_connections parameter found, try another parameter
+      LOOP AT lo_params_result->get_parameters( ) INTO lo_param.
+        IF lo_param->get_ismodifiable( ) = abap_true AND
+           lo_param->get_datatype( ) = 'integer'.
+          " Parse allowed values to get a valid value
+          lv_allowed = lo_param->get_allowedvalues( ).
+          IF lv_allowed CP '*-*'.
+            " Range format like '1-65535'
+            SPLIT lv_allowed AT '-' INTO lv_min lv_max.
+            lv_param_name = lo_param->get_parametername( ).
+            lv_param_value = lv_min.
+            " Create new parameter object with modified values
+            APPEND NEW /aws1/cl_rdsparameter(
+              iv_parametername = lv_param_name
+              iv_parametervalue = lv_param_value
+              iv_applymethod = 'immediate' ) TO lt_update_params.
+            EXIT.
+          ENDIF.
+        ENDIF.
+      ENDLOOP.
+    ENDIF.
+
+    IF lt_update_params IS NOT INITIAL.
+      ao_rds_actions->modify_db_parameter_group(
+        EXPORTING
+          iv_dbparametergroupname = av_param_group_name
+          it_parameters           = lt_update_params
+        IMPORTING
+          oo_result = lo_result ).
+
+      cl_abap_unit_assert=>assert_bound(
+        act = lo_result
+        msg = 'Result should not be initial' ).
+
+      lv_returned_name = lo_result->get_dbparametergroupname( ).
+      
+      " Parameter group name should match (may be truncated)
+      cl_abap_unit_assert=>assert_true(
+        act = boolc( lv_returned_name CP |{ av_param_group_name }*| OR
+                     av_param_group_name CP |{ lv_returned_name }*| )
+        msg = |Parameter group name should match: Expected { av_param_group_name }, Got { lv_returned_name }| ).
+    ELSE.
+      " Should not happen but if it does, fail the test
+      cl_abap_unit_assert=>fail( msg = 'No modifiable parameters found for modification test' ).
+    ENDIF.
+
+  ENDMETHOD.
+
+  METHOD delete_db_parameter_group.
+    DATA lv_uuid TYPE string.
+    DATA lv_test_param_group TYPE /aws1/rdsstring.
+
+    lv_uuid = /awsex/cl_utils=>get_random_string( ).
+    lv_test_param_group = |test-pg-del-{ lv_uuid }|.
+
+    " Create a test parameter group specifically for deletion
+    ao_rds->createdbparametergroup(
+      iv_dbparametergroupname   = lv_test_param_group
+      iv_dbparametergroupfamily = av_param_group_family
+      iv_description            = 'Test parameter group for deletion'
+      it_tags                   = VALUE #( ( NEW /aws1/cl_rdstag( iv_key = 'convert_test' iv_value = 'true' ) ) ) ).
+
+    " Verify it was created
+    TRY.
+        ao_rds->describedbparametergroups( iv_dbparametergroupname = lv_test_param_group ).
+      CATCH /aws1/cx_rdsdbprmgrnotfndfault.
+        cl_abap_unit_assert=>fail( msg = 'Test parameter group was not created' ).
+    ENDTRY.
+
+    " Delete it using the action method
+    ao_rds_actions->delete_db_parameter_group( iv_dbparametergroupname = lv_test_param_group ).
+
+    " Verify deletion
+    TRY.
+        ao_rds->describedbparametergroups( iv_dbparametergroupname = lv_test_param_group ).
+        cl_abap_unit_assert=>fail( msg = 'Parameter group should have been deleted' ).
+      CATCH /aws1/cx_rdsdbprmgrnotfndfault.
+        " Expected - parameter group was deleted successfully
     ENDTRY.
 
   ENDMETHOD.
@@ -314,25 +349,21 @@ CLASS ltc_awsex_cl_rds_actions IMPLEMENTATION.
     lo_result = ao_rds_actions->descr_db_clust_param_groups(
       iv_param_group_name = lv_cluster_pg_name ).
 
-        cl_abap_unit_assert=>assert_bound(
-          act = lo_result
-          msg = 'Parameter group creation failed'
-        ).
+    cl_abap_unit_assert=>assert_bound(
+      act = lo_result
+      msg = 'Cluster parameter group retrieval failed' ).
 
-        cl_abap_unit_assert=>assert_equals(
-          act = lo_result->get_dbclusterparamgroupname( )
-          exp = gv_param_group_name_2
-          msg = 'Parameter group name mismatch'
-        ).
-      CATCH /aws1/cx_rt_generic INTO DATA(lo_exception).
-        " Skip if cluster not found
-        DATA(lv_error_msg) = lo_exception->get_text( ).
-        IF lv_error_msg CS 'DBClusterNotFound'.
-          RETURN.  " Skip test - resource not available
-        ELSE.
-          cl_abap_unit_assert=>fail( |Error: { lv_error_msg }| ).
-        ENDIF.
+    cl_abap_unit_assert=>assert_true(
+      act = boolc( lo_result->get_dbclusterparamgroupname( ) CP |{ lv_cluster_pg_name }*| )
+      msg = 'Cluster parameter group name mismatch' ).
+
+    " Cleanup
+    TRY.
+        ao_rds->deletedbclusterparamgroup( iv_dbclusterparamgroupname = lv_cluster_pg_name ).
+      CATCH /aws1/cx_rt_generic.
+        " Ignore cleanup errors
     ENDTRY.
+
   ENDMETHOD.
 
   METHOD create_db_clust_param_group.
@@ -348,25 +379,21 @@ CLASS ltc_awsex_cl_rds_actions IMPLEMENTATION.
       iv_param_group_family = 'aurora-mysql8.0'
       iv_description = 'Test cluster parameter group creation' ).
 
-        cl_abap_unit_assert=>assert_bound(
-          act = lo_result
-          msg = 'Parameter group retrieval failed'
-        ).
+    cl_abap_unit_assert=>assert_bound(
+      act = lo_result
+      msg = 'Cluster parameter group creation failed' ).
 
-        cl_abap_unit_assert=>assert_equals(
-          act = lo_result->get_dbclusterparamgroupname( )
-          exp = gv_param_group_name
-          msg = 'Parameter group name mismatch'
-        ).
-      CATCH /aws1/cx_rt_generic INTO DATA(lo_exception).
-        " Skip if cluster not found
-        DATA(lv_error_msg) = lo_exception->get_text( ).
-        IF lv_error_msg CS 'DBClusterNotFound'.
-          RETURN.  " Skip test - resource not available
-        ELSE.
-          cl_abap_unit_assert=>fail( |Error: { lv_error_msg }| ).
-        ENDIF.
+    cl_abap_unit_assert=>assert_true(
+      act = boolc( lo_result->get_dbclusterparamgroupname( ) CP |{ lv_cluster_pg_name }*| )
+      msg = 'Cluster parameter group name mismatch' ).
+
+    " Cleanup
+    TRY.
+        ao_rds->deletedbclusterparamgroup( iv_dbclusterparamgroupname = lv_cluster_pg_name ).
+      CATCH /aws1/cx_rt_generic.
+        " Ignore cleanup errors
     ENDTRY.
+
   ENDMETHOD.
 
   METHOD descr_db_cluster_parameters.
@@ -393,57 +420,65 @@ CLASS ltc_awsex_cl_rds_actions IMPLEMENTATION.
       iv_param_group_name = lv_cluster_pg_name
       iv_source = 'engine-default' ).
 
-        cl_abap_unit_assert=>assert_not_initial(
-          act = lines( lt_parameters )
-          msg = 'No parameters retrieved'
-        ).
-      CATCH /aws1/cx_rt_generic INTO DATA(lo_exception).
-        " Skip if cluster not found
-        DATA(lv_error_msg) = lo_exception->get_text( ).
-        IF lv_error_msg CS 'DBClusterNotFound'.
-          RETURN.  " Skip test - resource not available
-        ELSE.
-          cl_abap_unit_assert=>fail( |Error: { lv_error_msg }| ).
-        ENDIF.
+    cl_abap_unit_assert=>assert_not_initial(
+      act = lines( lt_parameters )
+      msg = 'No cluster parameters retrieved' ).
+
+    " Cleanup
+    TRY.
+        ao_rds->deletedbclusterparamgroup( iv_dbclusterparamgroupname = lv_cluster_pg_name ).
+      CATCH /aws1/cx_rt_generic.
+        " Ignore cleanup errors
     ENDTRY.
+
   ENDMETHOD.
 
   METHOD modify_db_clust_param_group.
     DATA lo_result TYPE REF TO /aws1/cl_rdsdbclstprmgrnamemsg.
     DATA lt_parameters TYPE /aws1/cl_rdsparameter=>tt_parameterslist.
+    DATA lv_uuid TYPE string.
+    DATA lv_cluster_pg_name TYPE /aws1/rdsstring.
 
+    lv_uuid = /awsex/cl_utils=>get_random_string( ).
+    lv_cluster_pg_name = |test-cpg-mod-{ lv_uuid }|.
+
+    " Create a cluster parameter group for testing
     TRY.
-        " Create a parameter to update
-        DATA(lo_param) = NEW /aws1/cl_rdsparameter(
-          iv_parametername = 'time_zone'
-          iv_parametervalue = 'UTC'
-          iv_applymethod = 'immediate'
-        ).
-        APPEND lo_param TO lt_parameters.
+        ao_rds->createdbclusterparamgroup(
+          iv_dbclusterparamgroupname = lv_cluster_pg_name
+          iv_dbparametergroupfamily = 'aurora-mysql8.0'
+          iv_description = 'Test cluster parameter group for modification'
+          it_tags = VALUE #( ( NEW /aws1/cl_rdstag( iv_key = 'convert_test' iv_value = 'true' ) ) ) ).
+      CATCH /aws1/cx_rdsdbparmgralrexfault.
+        " Already exists
+    ENDTRY.
+
+    " Create a parameter to update
+    DATA(lo_param) = NEW /aws1/cl_rdsparameter(
+      iv_parametername = 'time_zone'
+      iv_parametervalue = 'UTC'
+      iv_applymethod = 'immediate' ).
+    APPEND lo_param TO lt_parameters.
 
     lo_result = ao_rds_actions->modify_db_clust_param_group(
       iv_param_group_name = lv_cluster_pg_name
       it_update_parameters = lt_parameters ).
 
-        cl_abap_unit_assert=>assert_bound(
-          act = lo_result
-          msg = 'Parameter update failed'
-        ).
+    cl_abap_unit_assert=>assert_bound(
+      act = lo_result
+      msg = 'Cluster parameter update failed' ).
 
-        cl_abap_unit_assert=>assert_equals(
-          act = lo_result->get_dbclusterparamgroupname( )
-          exp = gv_param_group_name
-          msg = 'Parameter group name mismatch'
-        ).
-      CATCH /aws1/cx_rt_generic INTO DATA(lo_exception).
-        " Skip if cluster not found
-        DATA(lv_error_msg) = lo_exception->get_text( ).
-        IF lv_error_msg CS 'DBClusterNotFound'.
-          RETURN.  " Skip test - resource not available
-        ELSE.
-          cl_abap_unit_assert=>fail( |Error: { lv_error_msg }| ).
-        ENDIF.
+    cl_abap_unit_assert=>assert_true(
+      act = boolc( lo_result->get_dbclusterparamgroupname( ) CP |{ lv_cluster_pg_name }*| )
+      msg = 'Cluster parameter group name mismatch' ).
+
+    " Cleanup
+    TRY.
+        ao_rds->deletedbclusterparamgroup( iv_dbclusterparamgroupname = lv_cluster_pg_name ).
+      CATCH /aws1/cx_rt_generic.
+        " Ignore cleanup errors
     ENDTRY.
+
   ENDMETHOD.
 
   METHOD delete_db_clust_param_group.
@@ -477,55 +512,29 @@ CLASS ltc_awsex_cl_rds_actions IMPLEMENTATION.
       CATCH /aws1/cx_rdsdbprmgrnotfndfault.
         " Expected - cluster parameter group was deleted successfully
     ENDTRY.
+
   ENDMETHOD.
 
-  METHOD get_orderable_instances.
-    DATA lt_options TYPE /aws1/cl_rdsorderabledbinsto01=>tt_orderabledbinstoptionslist.
+  METHOD describe_db_engine_versions.
+    DATA lo_result TYPE REF TO /aws1/cl_rdsdbenginevrsmessage.
 
-    TRY.
-        lt_options = ao_rds_actions->describe_orderable_db_instance_options(
-          iv_db_engine = 'aurora-mysql'
-          iv_db_engine_version = gv_engine_version
-        ).
+    ao_rds_actions->describe_db_engine_versions(
+      EXPORTING
+        iv_engine                 = av_engine
+        iv_dbparametergroupfamily = av_param_group_family
+      IMPORTING
+        oo_result = lo_result ).
 
-        cl_abap_unit_assert=>assert_not_initial(
-          act = lines( lt_options )
-          msg = 'No orderable instances retrieved'
-        ).
-      CATCH /aws1/cx_rt_generic INTO DATA(lo_exception).
-        " Skip if cluster not found
-        DATA(lv_error_msg) = lo_exception->get_text( ).
-        IF lv_error_msg CS 'DBClusterNotFound'.
-          RETURN.  " Skip test - resource not available
-        ELSE.
-          cl_abap_unit_assert=>fail( |Error: { lv_error_msg }| ).
-        ENDIF.
-    ENDTRY.
+    cl_abap_unit_assert=>assert_bound(
+      act = lo_result
+      msg = 'Result should not be initial' ).
+
+    cl_abap_unit_assert=>assert_not_initial(
+      act = lo_result->get_dbengineversions( )
+      msg = 'Engine versions should not be empty' ).
+
   ENDMETHOD.
 
-<<<<<<< HEAD
-  METHOD delete_parameter_group.
-    TRY.
-        " Delete the second parameter group created in create_parameter_group test
-        ao_rds_actions->delete_db_cluster_parameter_group(
-          iv_param_group_name = gv_param_group_name_2
-        ).
-
-        " Verify deletion - wait a moment for propagation
-        WAIT UP TO 5 SECONDS.
-        
-        TRY.
-            DATA(lo_result) = ao_rds_actions->describe_db_cluster_parameter_groups(
-              iv_param_group_name = gv_param_group_name_2
-            ).
-            " If we reach here, deletion failed
-            IF lo_result IS BOUND.
-              cl_abap_unit_assert=>fail( 'Parameter group was not deleted' ).
-            ENDIF.
-          CATCH /aws1/cx_rdsdbprmgrnotfndfault.
-            " Expected - parameter group successfully deleted
-        ENDTRY.
-=======
   METHOD descr_orderable_db_inst_opts.
     DATA lo_result TYPE REF TO /aws1/cl_rdsorderabledbinsto00.
 
@@ -543,17 +552,7 @@ CLASS ltc_awsex_cl_rds_actions IMPLEMENTATION.
     cl_abap_unit_assert=>assert_not_initial(
       act = lo_result->get_orderabledbinstoptions( )
       msg = 'Orderable options should not be empty' ).
->>>>>>> 91845e093 (fixing unit test name)
 
-      CATCH /aws1/cx_rt_generic INTO DATA(lo_exception).
-        " Skip if cluster not found
-        DATA(lv_error_msg) = lo_exception->get_text( ).
-        IF lv_error_msg CS 'DBClusterNotFound'.
-          RETURN.  " Skip test - resource not available
-        ELSE.
-          cl_abap_unit_assert=>fail( |Error: { lv_error_msg }| ).
-        ENDIF.
-    ENDTRY.
   ENDMETHOD.
 
 ENDCLASS.

@@ -96,25 +96,6 @@ CLASS /awsex/cl_rds_actions DEFINITION
       RAISING
         /aws1/cx_rt_generic.
 
-    " Create a DB snapshot
-    METHODS create_db_snapshot
-      IMPORTING
-        !iv_dbsnapshotidentifier TYPE /aws1/rdsstring
-        !iv_dbinstanceidentifier TYPE /aws1/rdsstring
-      EXPORTING
-        !oo_result               TYPE REF TO /aws1/cl_rdscreatedbsnapresult
-      RAISING
-        /aws1/cx_rt_generic.
-
-    " Get a DB snapshot
-    METHODS describe_db_snapshots
-      IMPORTING
-        !iv_dbsnapshotidentifier TYPE /aws1/rdsstring
-      EXPORTING
-        !oo_result               TYPE REF TO /aws1/cl_rdsdbsnapshotmessage
-      RAISING
-        /aws1/cx_rt_generic.
-
     " Get database engine versions
     METHODS describe_db_engine_versions
       IMPORTING
@@ -126,48 +107,12 @@ CLASS /awsex/cl_rds_actions DEFINITION
         /aws1/cx_rt_generic.
 
     " Get orderable DB instance options
-    METHODS descrorderabledbinstopts
+    METHODS descr_orderable_db_inst_opts
       IMPORTING
         !iv_engine        TYPE /aws1/rdsstring
         !iv_engineversion TYPE /aws1/rdsstring
       EXPORTING
         !oo_result        TYPE REF TO /aws1/cl_rdsorderabledbinsto00
-      RAISING
-        /aws1/cx_rt_generic.
-
-    " Get a DB instance
-    METHODS describe_db_instances
-      IMPORTING
-        !iv_dbinstanceidentifier TYPE /aws1/rdsstring
-      EXPORTING
-        !oo_result               TYPE REF TO /aws1/cl_rdsdbinstancemessage
-      RAISING
-        /aws1/cx_rt_generic.
-
-    " Create a DB instance
-    METHODS create_db_instance
-      IMPORTING
-        !iv_dbname               TYPE /aws1/rdsstring
-        !iv_dbinstanceidentifier TYPE /aws1/rdsstring
-        !iv_dbparametergroupname TYPE /aws1/rdsstring
-        !iv_engine               TYPE /aws1/rdsstring
-        !iv_engineversion        TYPE /aws1/rdsstring
-        !iv_dbinstanceclass      TYPE /aws1/rdsstring
-        !iv_storagetype          TYPE /aws1/rdsstring
-        !iv_allocatedstorage     TYPE /aws1/rdsintegeroptional
-        !iv_masterusername       TYPE /aws1/rdsstring
-        !iv_masteruserpassword   TYPE /aws1/rdssensitivestring
-      EXPORTING
-        !oo_result               TYPE REF TO /aws1/cl_rdscreatedbinstresult
-      RAISING
-        /aws1/cx_rt_generic.
-
-    " Delete a DB instance
-    METHODS delete_db_instance
-      IMPORTING
-        !iv_dbinstanceidentifier TYPE /aws1/rdsstring
-      EXPORTING
-        !oo_result               TYPE REF TO /aws1/cl_rdsdeletedbinstresult
       RAISING
         /aws1/cx_rt_generic.
   PROTECTED SECTION.
@@ -480,7 +425,7 @@ CLASS /AWSEX/CL_RDS_ACTIONS IMPLEMENTATION.
     " snippet-end:[rds.abapv1.describe_db_engine_versions]
   ENDMETHOD.
 
-  METHOD descrorderabledbinstopts.
+  METHOD descr_orderable_db_inst_opts.
     CONSTANTS cv_pfl TYPE /aws1/rt_profile_id VALUE 'ZCODE_DEMO'.
 
     DATA(lo_session) = /aws1/cl_rt_session_aws=>create( cv_pfl ).

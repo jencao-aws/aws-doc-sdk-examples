@@ -14,19 +14,11 @@ CLASS ltc_awsex_cl_sqs_actions DEFINITION FOR TESTING DURATION MEDIUM RISK LEVEL
     CLASS-DATA ao_sqs_actions TYPE REF TO /awsex/cl_sqs_actions.
     CLASS-DATA av_test_queue_url TYPE /aws1/sqsstring.
     CLASS-DATA av_test_queue_name TYPE /aws1/sqsstring.
-    CLASS-DATA ao_sqs TYPE REF TO /aws1/if_sqs.
-    CLASS-DATA ao_session TYPE REF TO /aws1/cl_rt_session_base.
-    CLASS-DATA ao_sqs_actions TYPE REF TO /awsex/cl_sqs_actions.
-    CLASS-DATA av_test_queue_url TYPE /aws1/sqsstring.
-    CLASS-DATA av_test_queue_name TYPE /aws1/sqsstring.
 
     METHODS: create_queue FOR TESTING RAISING /aws1/cx_rt_generic,
       send_message FOR TESTING RAISING /aws1/cx_rt_generic,
       send_message_batch FOR TESTING RAISING /aws1/cx_rt_generic,
-      send_message_batch FOR TESTING RAISING /aws1/cx_rt_generic,
       receive_message FOR TESTING RAISING /aws1/cx_rt_generic,
-      delete_message FOR TESTING RAISING /aws1/cx_rt_generic,
-      delete_message_batch FOR TESTING RAISING /aws1/cx_rt_generic,
       delete_message FOR TESTING RAISING /aws1/cx_rt_generic,
       delete_message_batch FOR TESTING RAISING /aws1/cx_rt_generic,
       list_queues FOR TESTING RAISING /aws1/cx_rt_generic,
@@ -37,15 +29,9 @@ CLASS ltc_awsex_cl_sqs_actions DEFINITION FOR TESTING DURATION MEDIUM RISK LEVEL
 
     CLASS-METHODS class_setup RAISING /aws1/cx_rt_generic /awsex/cx_generic.
     CLASS-METHODS class_teardown RAISING /aws1/cx_rt_generic.
-    CLASS-METHODS class_setup RAISING /aws1/cx_rt_generic /awsex/cx_generic.
-    CLASS-METHODS class_teardown RAISING /aws1/cx_rt_generic.
 
     METHODS create_test_queue
-    METHODS create_test_queue
       IMPORTING
-                iv_queue_name      TYPE /aws1/sqsstring
-      RETURNING
-                VALUE(rv_queue_url) TYPE /aws1/sqsstring
                 iv_queue_name      TYPE /aws1/sqsstring
       RETURNING
                 VALUE(rv_queue_url) TYPE /aws1/sqsstring
@@ -55,7 +41,6 @@ CLASS ltc_awsex_cl_sqs_actions DEFINITION FOR TESTING DURATION MEDIUM RISK LEVEL
 ENDCLASS.
 CLASS ltc_awsex_cl_sqs_actions IMPLEMENTATION.
 
-  METHOD class_setup.
   METHOD class_setup.
     ao_session = /aws1/cl_rt_session_aws=>create( iv_profile_id = cv_pfl ).
     ao_sqs = /aws1/cl_sqs_factory=>create( ao_session ).
@@ -146,7 +131,6 @@ CLASS ltc_awsex_cl_sqs_actions IMPLEMENTATION.
     ENDTRY.
   ENDMETHOD.
 
-
   METHOD send_message.
     CONSTANTS cv_message TYPE /aws1/sqsstring VALUE 'Sample text message to test send message action'.
     DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
@@ -195,7 +179,6 @@ CLASS ltc_awsex_cl_sqs_actions IMPLEMENTATION.
     ENDTRY.
   ENDMETHOD.
 
-
   METHOD receive_message.
     CONSTANTS cv_message TYPE /aws1/sqsstring VALUE 'Sample text message to test receive message action'.
     DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
@@ -237,7 +220,6 @@ CLASS ltc_awsex_cl_sqs_actions IMPLEMENTATION.
     ENDTRY.
   ENDMETHOD.
 
-
   METHOD long_polling_on_msg_receipt.
     CONSTANTS cv_message TYPE /aws1/sqsstring VALUE 'Sample text message to test long polling on message receipt'.
     CONSTANTS cv_wait_time TYPE /aws1/sqsinteger VALUE 10.
@@ -259,10 +241,8 @@ CLASS ltc_awsex_cl_sqs_actions IMPLEMENTATION.
       iv_wait_time = cv_wait_time ).
 
     DATA lv_found TYPE abap_bool VALUE abap_false.
-    DATA lv_found TYPE abap_bool VALUE abap_false.
     LOOP AT lo_polling_result->get_messages( ) INTO DATA(lo_message).
       IF lo_message->get_messageid( ) = lo_send_result->get_messageid( ) AND lo_message->get_body( ) = cv_message.
-        lv_found = abap_true.
         lv_found = abap_true.
       ENDIF.
     ENDLOOP.
@@ -279,7 +259,6 @@ CLASS ltc_awsex_cl_sqs_actions IMPLEMENTATION.
     ENDTRY.
   ENDMETHOD.
 
-
   METHOD long_polling_on_create_queue.
     DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
     DATA(lv_queue_name) = |code-example-long-poll-create-{ lv_uuid }|.
@@ -293,15 +272,6 @@ CLASS ltc_awsex_cl_sqs_actions IMPLEMENTATION.
     cl_abap_unit_assert=>assert_not_initial(
       act = lo_create_result->get_queueurl( )
       msg = |Queue { lv_queue_name } was not created| ).
-      iv_queue_name = lv_queue_name
-      iv_wait_time = cv_wait_time ).
-
-    cl_abap_unit_assert=>assert_not_initial(
-      act = lo_create_result->get_queueurl( )
-      msg = |Queue { lv_queue_name } was not created| ).
-
-    " Wait for queue to be ready
-    WAIT UP TO 3 SECONDS.
 
     " Wait for queue to be ready
     WAIT UP TO 3 SECONDS.
@@ -314,17 +284,9 @@ CLASS ltc_awsex_cl_sqs_actions IMPLEMENTATION.
       it_attributenames = lt_attributes ).
 
     DATA lv_found TYPE abap_bool VALUE abap_false.
-      iv_queueurl = lo_create_result->get_queueurl( )
-      it_attributenames = lt_attributes ).
-
-    DATA lv_found TYPE abap_bool VALUE abap_false.
     LOOP AT lo_get_result->get_attributes( ) INTO DATA(lo_attribute).
       IF lo_attribute-key = 'ReceiveMessageWaitTimeSeconds'.
         cl_abap_unit_assert=>assert_equals(
-          act = lo_attribute-value->get_value( )
-          exp = cv_wait_time
-          msg = |ReceiveMessageWaitTimeSeconds attribute did not match| ).
-        lv_found = abap_true.
           act = lo_attribute-value->get_value( )
           exp = cv_wait_time
           msg = |ReceiveMessageWaitTimeSeconds attribute did not match| ).
@@ -344,11 +306,7 @@ CLASS ltc_awsex_cl_sqs_actions IMPLEMENTATION.
     ENDTRY.
   ENDMETHOD.
 
-
   METHOD get_queue_url.
-    " Test with the existing test queue
-    DATA(lo_get_result) = ao_sqs_actions->get_queue_url( av_test_queue_name ).
-
     " Test with the existing test queue
     DATA(lo_get_result) = ao_sqs_actions->get_queue_url( av_test_queue_name ).
 
@@ -356,27 +314,14 @@ CLASS ltc_awsex_cl_sqs_actions IMPLEMENTATION.
       act = lo_get_result->get_queueurl( )
       exp = av_test_queue_url
       msg = |Queue URL did not match expected value| ).
-      act = lo_get_result->get_queueurl( )
-      exp = av_test_queue_url
-      msg = |Queue URL did not match expected value| ).
   ENDMETHOD.
-
 
   METHOD list_queues.
     " Test the action method
     DATA(lo_result) = ao_sqs_actions->list_queues( ).
-    " Test the action method
-    DATA(lo_result) = ao_sqs_actions->list_queues( ).
 
     " Verify our test queue is in the list
-    " Verify our test queue is in the list
     DATA lv_found TYPE abap_bool VALUE abap_false.
-    LOOP AT lo_result->get_queueurls( ) INTO DATA(lo_url).
-      IF lo_url->get_value( ) = av_test_queue_url.
-        lv_found = abap_true.
-        EXIT.
-      ENDIF.
-    ENDLOOP.
     LOOP AT lo_result->get_queueurls( ) INTO DATA(lo_url).
       IF lo_url->get_value( ) = av_test_queue_url.
         lv_found = abap_true.
@@ -387,9 +332,7 @@ CLASS ltc_awsex_cl_sqs_actions IMPLEMENTATION.
     cl_abap_unit_assert=>assert_true(
       act = lv_found
       msg = |Test queue should be in the list| ).
-      msg = |Test queue should be in the list| ).
   ENDMETHOD.
-
 
   METHOD delete_queue.
     DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
@@ -404,22 +347,14 @@ CLASS ltc_awsex_cl_sqs_actions IMPLEMENTATION.
     DATA lo_list_result TYPE REF TO /aws1/cl_sqslistqueuesresult.
     DO 6 TIMES.
       WAIT UP TO 10 SECONDS.
-    DO 6 TIMES.
-      WAIT UP TO 10 SECONDS.
       lv_found = abap_false.
       lo_list_result = ao_sqs->listqueues( ).
       LOOP AT lo_list_result->get_queueurls( ) INTO DATA(lo_url).
         IF lo_url->get_value( ) = lv_queue_url.
-        IF lo_url->get_value( ) = lv_queue_url.
           lv_found = abap_true.
-          EXIT.
           EXIT.
         ENDIF.
       ENDLOOP.
-      IF lv_found = abap_false.
-        EXIT.
-      ENDIF.
-    ENDDO.
       IF lv_found = abap_false.
         EXIT.
       ENDIF.

@@ -11,16 +11,7 @@ CLASS ltc_awsex_cl_cwt_actions DEFINITION FOR TESTING DURATION LONG RISK LEVEL D
     CLASS-DATA ao_cwt_actions TYPE REF TO /awsex/cl_cwt_actions.
     CLASS-DATA av_bucket_name TYPE /aws1/s3_bucketname.
     CLASS-DATA av_alarm_name TYPE /aws1/cwtalarmname.
-    CLASS-DATA ao_cwt TYPE REF TO /aws1/if_cwt.
-    CLASS-DATA ao_s3 TYPE REF TO /aws1/if_s3.
-    CLASS-DATA ao_session TYPE REF TO /aws1/cl_rt_session_base.
-    CLASS-DATA ao_cwt_actions TYPE REF TO /awsex/cl_cwt_actions.
-    CLASS-DATA av_bucket_name TYPE /aws1/s3_bucketname.
-    CLASS-DATA av_alarm_name TYPE /aws1/cwtalarmname.
     DATA lv_found TYPE abap_bool VALUE abap_false.
-
-    CLASS-METHODS class_setup RAISING /aws1/cx_rt_generic cx_uuid_error.
-    CLASS-METHODS class_teardown RAISING /aws1/cx_rt_generic.
 
     CLASS-METHODS class_setup RAISING /aws1/cx_rt_generic cx_uuid_error.
     CLASS-METHODS class_teardown RAISING /aws1/cx_rt_generic.
@@ -42,58 +33,10 @@ ENDCLASS.       "ltc_awsex_cl_cwt_actions
 CLASS ltc_awsex_cl_cwt_actions IMPLEMENTATION.
 
   METHOD class_setup.
-  METHOD class_setup.
     ao_session = /aws1/cl_rt_session_aws=>create( iv_profile_id = cv_pfl ).
     ao_cwt = /aws1/cl_cwt_factory=>create( ao_session ).
     ao_s3 = /aws1/cl_s3_factory=>create( ao_session ).
     ao_cwt_actions = NEW /awsex/cl_cwt_actions( ).
-
-    " Create an S3 bucket to be used for all tests that need one
-    " Tagged with 'convert_test' for manual cleanup if needed
-    DATA lv_uuid_16 TYPE sysuuid_x16.
-    CONSTANTS cv_bucket_name TYPE /aws1/s3_bucketname VALUE 'code-example-cwt-'.
-    
-    lv_uuid_16 = cl_system_uuid=>create_uuid_x16_static( ).
-    av_bucket_name = cv_bucket_name && lv_uuid_16.
-    TRANSLATE av_bucket_name TO LOWER CASE.
-
-    /awsex/cl_utils=>create_bucket(
-      iv_bucket = av_bucket_name
-      io_s3 = ao_s3
-      io_session = ao_session ).
-
-    " Tag the bucket with 'convert_test'
-    DATA lt_tags TYPE /aws1/cl_s3_tag=>tt_tagset.
-    DATA(lo_tag) = NEW /aws1/cl_s3_tag(
-      iv_key = 'convert_test'
-      iv_value = 'true' ).
-    INSERT lo_tag INTO TABLE lt_tags.
-
-    TRY.
-        ao_s3->putbuckettagging(
-          iv_bucket = av_bucket_name
-          io_tagging = NEW /aws1/cl_s3_tagging( it_tagset = lt_tags ) ).
-      CATCH /aws1/cx_rt_generic.
-        " Tagging might fail but we continue
-    ENDTRY.
-
-    " Create a base alarm for shared tests
-    " Tagged resources will be cleaned up
-    av_alarm_name = 'code-example-cwt-alarm-' && lv_uuid_16.
-    TRANSLATE av_alarm_name TO LOWER CASE.
-
-  ENDMETHOD.
-
-  METHOD class_teardown.
-    " Clean up the shared S3 bucket
-    " Note: We clean up S3 bucket in teardown since alarms don't depend on it
-    TRY.
-        /awsex/cl_utils=>cleanup_bucket(
-          iv_bucket = av_bucket_name
-          io_s3 = ao_s3 ).
-      CATCH /aws1/cx_rt_generic.
-        " Ignore errors on cleanup
-    ENDTRY.
 
     " Create an S3 bucket to be used for all tests that need one
     " Tagged with 'convert_test' for manual cleanup if needed
@@ -166,10 +109,7 @@ CLASS ltc_awsex_cl_cwt_actions IMPLEMENTATION.
 
     " Use the shared bucket from class_setup
     " Define alarm name.
-    " Use the shared bucket from class_setup
-    " Define alarm name.
     lv_uuid_16 = cl_system_uuid=>create_uuid_x16_static( ).
-    lv_alarm_name = 'code-example-cwt-test-' && lv_uuid_16.
     lv_alarm_name = 'code-example-cwt-test-' && lv_uuid_16.
     TRANSLATE lv_alarm_name TO LOWER CASE.
 
@@ -179,7 +119,6 @@ CLASS ltc_awsex_cl_cwt_actions IMPLEMENTATION.
     INSERT lo_dimensions INTO TABLE lt_dimensions.
 
     lo_dimensions = NEW #( iv_name = 'BucketName'
-                           iv_value = av_bucket_name ).
                            iv_value = av_bucket_name ).
     INSERT lo_dimensions INTO TABLE lt_dimensions.
 
@@ -243,8 +182,6 @@ CLASS ltc_awsex_cl_cwt_actions IMPLEMENTATION.
     "Define alarm name.
     lv_uuid_16 = cl_system_uuid=>create_uuid_x16_static( ).
     lv_alarm_name = 'code-example-cwt-test-' && lv_uuid_16.
-    lv_uuid_16 = cl_system_uuid=>create_uuid_x16_static( ).
-    lv_alarm_name = 'code-example-cwt-test-' && lv_uuid_16.
     TRANSLATE lv_alarm_name TO LOWER CASE.
 
     "Create Amazon S3 dimensions.
@@ -253,7 +190,6 @@ CLASS ltc_awsex_cl_cwt_actions IMPLEMENTATION.
     INSERT lo_dimensions INTO TABLE lt_dimensions.
 
     lo_dimensions = NEW #( iv_name = 'BucketName'
-                           iv_value = av_bucket_name ).
                            iv_value = av_bucket_name ).
     INSERT lo_dimensions INTO TABLE lt_dimensions.
 
@@ -318,8 +254,6 @@ CLASS ltc_awsex_cl_cwt_actions IMPLEMENTATION.
     "Define alarm name.
     lv_uuid_16 = cl_system_uuid=>create_uuid_x16_static( ).
     lv_alarm_name = 'code-example-cwt-test-' && lv_uuid_16.
-    lv_uuid_16 = cl_system_uuid=>create_uuid_x16_static( ).
-    lv_alarm_name = 'code-example-cwt-test-' && lv_uuid_16.
     TRANSLATE lv_alarm_name TO LOWER CASE.
 
     "Create Amazon S3 dimensions.
@@ -328,7 +262,6 @@ CLASS ltc_awsex_cl_cwt_actions IMPLEMENTATION.
     INSERT lo_dimensions INTO TABLE lt_dimensions.
 
     lo_dimensions = NEW #( iv_name = 'BucketName'
-                           iv_value = av_bucket_name ).
                            iv_value = av_bucket_name ).
     INSERT lo_dimensions INTO TABLE lt_dimensions.
 
@@ -396,8 +329,6 @@ CLASS ltc_awsex_cl_cwt_actions IMPLEMENTATION.
     "Define alarm name.
     lv_uuid_16 = cl_system_uuid=>create_uuid_x16_static( ).
     lv_alarm_name = 'code-example-cwt-test-' && lv_uuid_16.
-    lv_uuid_16 = cl_system_uuid=>create_uuid_x16_static( ).
-    lv_alarm_name = 'code-example-cwt-test-' && lv_uuid_16.
     TRANSLATE lv_alarm_name TO LOWER CASE.
 
     "Create Amazon S3 dimensions.
@@ -406,7 +337,6 @@ CLASS ltc_awsex_cl_cwt_actions IMPLEMENTATION.
     INSERT lo_dimensions INTO TABLE lt_dimensions.
 
     lo_dimensions = NEW #( iv_name = 'BucketName'
-                           iv_value = av_bucket_name ).
                            iv_value = av_bucket_name ).
     INSERT lo_dimensions INTO TABLE lt_dimensions.
 
@@ -475,8 +405,6 @@ CLASS ltc_awsex_cl_cwt_actions IMPLEMENTATION.
     "Define alarm name.
     lv_uuid_16 = cl_system_uuid=>create_uuid_x16_static( ).
     lv_alarm_name = 'code-example-cwt-test-' && lv_uuid_16.
-    lv_uuid_16 = cl_system_uuid=>create_uuid_x16_static( ).
-    lv_alarm_name = 'code-example-cwt-test-' && lv_uuid_16.
     TRANSLATE lv_alarm_name TO LOWER CASE.
 
     "Create Amazon S3 dimensions.
@@ -485,7 +413,6 @@ CLASS ltc_awsex_cl_cwt_actions IMPLEMENTATION.
     INSERT lo_dimensions INTO TABLE lt_dimensions.
 
     lo_dimensions = NEW #( iv_name = 'BucketName'
-                           iv_value = av_bucket_name ).
                            iv_value = av_bucket_name ).
     INSERT lo_dimensions INTO TABLE lt_dimensions.
 
@@ -555,8 +482,6 @@ CLASS ltc_awsex_cl_cwt_actions IMPLEMENTATION.
     "Define alarm name.
     lv_uuid_16 = cl_system_uuid=>create_uuid_x16_static( ).
     lv_alarm_name = 'code-example-cwt-test-' && lv_uuid_16.
-    lv_uuid_16 = cl_system_uuid=>create_uuid_x16_static( ).
-    lv_alarm_name = 'code-example-cwt-test-' && lv_uuid_16.
     TRANSLATE lv_alarm_name TO LOWER CASE.
 
     "Create Amazon S3 dimensions.
@@ -565,7 +490,6 @@ CLASS ltc_awsex_cl_cwt_actions IMPLEMENTATION.
     INSERT lo_dimensions INTO TABLE lt_dimensions.
 
     lo_dimensions = NEW #( iv_name = 'BucketName'
-                           iv_value = av_bucket_name ).
                            iv_value = av_bucket_name ).
     INSERT lo_dimensions INTO TABLE lt_dimensions.
 
@@ -590,7 +514,6 @@ CLASS ltc_awsex_cl_cwt_actions IMPLEMENTATION.
     "Validation.
     lv_found = abap_false.
 
-    LOOP AT lt_metrics INTO DATA(lo_metrics).
     LOOP AT lt_metrics INTO DATA(lo_metrics).
       IF lo_metrics->get_namespace( ) = 'AWS/S3'.
         lv_found = abap_true.
