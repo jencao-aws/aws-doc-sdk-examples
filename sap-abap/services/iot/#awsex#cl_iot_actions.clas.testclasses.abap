@@ -113,7 +113,9 @@ CLASS ltc_awsex_cl_iot_actions IMPLEMENTATION.
     DATA(lv_policy_document) = '{"Version":"2012-10-17","Statement":[' &&
       '{"Effect":"Allow","Action":["sns:Publish"],"Resource":"' && lv_sns_arn && '"},' &&
       '{"Effect":"Allow","Action":["logs:CreateLogGroup","logs:CreateLogStream",' &&
-      '"logs:PutLogEvents"],"Resource":"*"}]}'.
+      '"logs:PutLogEvents"],"Resource":"*"},' &&
+      '{"Effect":"Allow","Action":["iot:CreateTopicRule","iot:DeleteTopicRule",' &&
+      '"iot:GetTopicRule","iot:ListTopicRules"],"Resource":"*"}]}'.
 
     TRY.
         ao_iam->putrolepolicy(
@@ -604,19 +606,11 @@ CLASS ltc_awsex_cl_iot_actions IMPLEMENTATION.
     ENDTRY.
 
     DATA(lv_shadow_state) = '{"state":{"desired":{"color":"red"}}}'.
-    " Convert string to xstring for the API
+    " Convert string to xstring for the API using codepage conversion
     DATA lv_shadow_xstring TYPE xstring.
-    CALL FUNCTION 'SCMS_STRING_TO_XSTRING'
-      EXPORTING
-        text     = lv_shadow_state
-      IMPORTING
-        buffer   = lv_shadow_xstring
-      EXCEPTIONS
-        failed   = 1
-        OTHERS   = 2.
-    IF sy-subrc <> 0.
-      cl_abap_unit_assert=>fail( msg = 'Failed to convert shadow state to xstring' ).
-    ENDIF.
+    DATA(lo_conv) = cl_abap_conv_out_ce=>create( encoding = 'UTF-8' ).
+    lo_conv->write( data = lv_shadow_state ).
+    lv_shadow_xstring = lo_conv->get_buffer( ).
     
     DATA(lo_result) = ao_iot_actions->update_thing_shadow(
       iv_thing_name = lv_test_thing
@@ -646,19 +640,11 @@ CLASS ltc_awsex_cl_iot_actions IMPLEMENTATION.
     ENDTRY.
 
     DATA(lv_shadow_state) = '{"state":{"desired":{"color":"blue"}}}'.
-    " Convert string to xstring for the API
+    " Convert string to xstring for the API using codepage conversion
     DATA lv_shadow_xstring TYPE xstring.
-    CALL FUNCTION 'SCMS_STRING_TO_XSTRING'
-      EXPORTING
-        text     = lv_shadow_state
-      IMPORTING
-        buffer   = lv_shadow_xstring
-      EXCEPTIONS
-        failed   = 1
-        OTHERS   = 2.
-    IF sy-subrc <> 0.
-      cl_abap_unit_assert=>fail( msg = 'Failed to convert shadow state to xstring' ).
-    ENDIF.
+    DATA(lo_conv) = cl_abap_conv_out_ce=>create( encoding = 'UTF-8' ).
+    lo_conv->write( data = lv_shadow_state ).
+    lv_shadow_xstring = lo_conv->get_buffer( ).
     
     TRY.
         ao_iop->updatethingshadow(
