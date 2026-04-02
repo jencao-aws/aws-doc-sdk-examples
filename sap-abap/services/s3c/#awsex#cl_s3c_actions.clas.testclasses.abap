@@ -13,8 +13,8 @@ CLASS ltc_awsex_cl_s3c_actions DEFINITION FOR TESTING DURATION LONG RISK LEVEL D
     CLASS-DATA gv_manifest_bucket TYPE /aws1/s3cbucketname.
     CLASS-DATA gv_report_bucket_arn TYPE /aws1/s3cs3bucketarnstring.
     CLASS-DATA gv_role_arn TYPE /aws1/s3ciamrolearn.
-    CLASS-DATA gv_role_name TYPE /aws1/iamrolenamestring.
-    CLASS-DATA gv_policy_arn TYPE /aws1/iamarnstring.
+    CLASS-DATA gv_role_name TYPE /aws1/iamrolenametype.
+    CLASS-DATA gv_policy_arn TYPE /aws1/iamarntype.
     CLASS-DATA gv_job_id TYPE /aws1/s3cjobid.
     CLASS-DATA gv_uuid TYPE string.
 
