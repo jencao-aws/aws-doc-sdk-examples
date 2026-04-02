@@ -136,15 +136,9 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
 
   METHOD create_manifest_and_files.
     " Upload sample files to the bucket for batch operations
-    " Convert strings to proper S3 streaming blob type
-    DATA lv_file1_content TYPE /aws1/s3_streamingblob.
-    DATA lv_file2_content TYPE /aws1/s3_streamingblob.
-    DATA lv_file3_content TYPE /aws1/s3_streamingblob.
-    DATA lv_manifest_content TYPE /aws1/s3_streamingblob.
-
-    lv_file1_content = /aws1/cl_rt_util=>string_to_xstring( 'Sample content for file 1' ).
-    lv_file2_content = /aws1/cl_rt_util=>string_to_xstring( 'Sample content for file 2' ).
-    lv_file3_content = /aws1/cl_rt_util=>string_to_xstring( 'Sample content for file 3' ).
+    DATA(lv_file1_content) = 'Sample content for file 1'.
+    DATA(lv_file2_content) = 'Sample content for file 2'.
+    DATA(lv_file3_content) = 'Sample content for file 3'.
 
     TRY.
         go_s3->putobject(
@@ -166,10 +160,9 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
     ENDTRY.
 
     " Create and upload manifest file
-    DATA(lv_manifest_string) = |{ gv_bucket_name },file1.txt\n| &&
-                                |{ gv_bucket_name },file2.txt\n| &&
-                                |{ gv_bucket_name },file3.txt\n|.
-    lv_manifest_content = /aws1/cl_rt_util=>string_to_xstring( lv_manifest_string ).
+    DATA(lv_manifest_content) = |{ gv_bucket_name },file1.txt\n| &&
+                                 |{ gv_bucket_name },file2.txt\n| &&
+                                 |{ gv_bucket_name },file3.txt\n|.
 
     TRY.
         go_s3->putobject(
@@ -198,7 +191,7 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
           iv_description              = 'Role for S3 Batch Operations testing' ).
         gv_role_arn = lo_create_role->get_role( )->get_arn( ).
 
-      CATCH /aws1/cx_iamentityalrdyexex.
+      CATCH /aws1/cx_iamentityalrdyexists.
         " Role already exists from previous failed run, get the ARN
         TRY.
             DATA(lo_get_role) = go_iam->getrole( iv_rolename = gv_role_name ).
@@ -264,7 +257,7 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
           iv_description    = 'Policy for S3 Batch Operations' ).
         gv_policy_arn = lo_create_policy->get_policy( )->get_arn( ).
 
-      CATCH /aws1/cx_iamentityalrdyexex.
+      CATCH /aws1/cx_iamentityalrdyexists.
         " Policy already exists, construct ARN manually
         gv_policy_arn = |arn:aws:iam::{ gv_account_id }:policy/{ lv_policy_name }|.
 
@@ -384,15 +377,49 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
           cl_abap_unit_assert=>fail( msg = |Failed to get manifest ETag: { lo_ex->get_text( ) }| ).
       ENDTRY.
 
-      " Create job
+      " Create job directly using SDK
       TRY.
-          DATA(lo_result) = go_s3c_actions->create_job(
-            iv_account_id      = gv_account_id
-            iv_role_arn        = gv_role_arn
-            iv_manifest_bucket = gv_manifest_bucket
-            iv_manifest_key    = 'job-manifest.csv'
-            iv_manifest_etag   = lv_etag
-            iv_report_bucket   = gv_report_bucket_arn ).
+          DATA(lv_manifest_arn) = |arn:aws:s3:::{ gv_manifest_bucket }/job-manifest.csv|.
+          DATA(lo_manifest_location) = NEW /aws1/cl_s3cjobmanifestloc(
+            iv_objectarn = lv_manifest_arn
+            iv_etag      = lv_etag ).
+
+          DATA lt_fields TYPE /aws1/cl_s3cjobmanifestfield00=>tt_jobmanifestfieldlist.
+          APPEND NEW /aws1/cl_s3cjobmanifestfield00( iv_value = 'Bucket' ) TO lt_fields.
+          APPEND NEW /aws1/cl_s3cjobmanifestfield00( iv_value = 'Key' ) TO lt_fields.
+
+          DATA(lo_manifest_spec) = NEW /aws1/cl_s3cjobmanifestspec(
+            iv_format = 'S3BatchOperations_CSV_20180820'
+            it_fields = lt_fields ).
+
+          DATA(lo_manifest) = NEW /aws1/cl_s3cjobmanifest(
+            io_spec     = lo_manifest_spec
+            io_location = lo_manifest_location ).
+
+          DATA lt_tagset TYPE /aws1/cl_s3cs3tag=>tt_s3tagset.
+          APPEND NEW /aws1/cl_s3cs3tag(
+            iv_key   = 'BatchTag'
+            iv_value = 'BatchValue' ) TO lt_tagset.
+
+          DATA(lo_operation) = NEW /aws1/cl_s3cjoboperation(
+            io_s3putobjecttagging = NEW /aws1/cl_s3cs3setobjecttagop( it_tagset = lt_tagset ) ).
+
+          DATA(lo_report) = NEW /aws1/cl_s3cjobreport(
+            iv_bucket      = gv_report_bucket_arn
+            iv_format      = 'Report_CSV_20180820'
+            iv_enabled     = abap_true
+            iv_prefix      = 'batch-op-reports'
+            iv_reportscope = 'AllTasks' ).
+
+          DATA(lo_result) = go_s3c->createjob(
+            iv_accountid             = gv_account_id
+            io_operation             = lo_operation
+            io_report                = lo_report
+            io_manifest              = lo_manifest
+            iv_priority              = 10
+            iv_rolearn               = gv_role_arn
+            iv_description           = 'Batch job for tagging objects'
+            iv_confirmationrequired  = abap_true ).
 
           gv_job_id = lo_result->get_jobid( ).
         CATCH /aws1/cx_rt_generic INTO lo_ex.
@@ -413,15 +440,52 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
         cl_abap_unit_assert=>fail( msg = |Failed to get manifest ETag: { lo_ex->get_text( ) }| ).
     ENDTRY.
 
-    " Create job - this must succeed
+    " Create job directly using SDK (not via actions class for debugging)
     TRY.
-        DATA(lo_result) = go_s3c_actions->create_job(
-          iv_account_id      = gv_account_id
-          iv_role_arn        = gv_role_arn
-          iv_manifest_bucket = gv_manifest_bucket
-          iv_manifest_key    = 'job-manifest.csv'
-          iv_manifest_etag   = lv_etag
-          iv_report_bucket   = gv_report_bucket_arn ).
+        " Create manifest object
+        DATA(lv_manifest_arn) = |arn:aws:s3:::{ gv_manifest_bucket }/job-manifest.csv|.
+        DATA(lo_manifest_location) = NEW /aws1/cl_s3cjobmanifestloc(
+          iv_objectarn = lv_manifest_arn
+          iv_etag      = lv_etag ).
+
+        DATA lt_fields TYPE /aws1/cl_s3cjobmanifestfield00=>tt_jobmanifestfieldlist.
+        APPEND NEW /aws1/cl_s3cjobmanifestfield00( iv_value = 'Bucket' ) TO lt_fields.
+        APPEND NEW /aws1/cl_s3cjobmanifestfield00( iv_value = 'Key' ) TO lt_fields.
+
+        DATA(lo_manifest_spec) = NEW /aws1/cl_s3cjobmanifestspec(
+          iv_format = 'S3BatchOperations_CSV_20180820'
+          it_fields = lt_fields ).
+
+        DATA(lo_manifest) = NEW /aws1/cl_s3cjobmanifest(
+          io_spec     = lo_manifest_spec
+          io_location = lo_manifest_location ).
+
+        " Create operation to tag objects
+        DATA lt_tagset TYPE /aws1/cl_s3cs3tag=>tt_s3tagset.
+        APPEND NEW /aws1/cl_s3cs3tag(
+          iv_key   = 'BatchTag'
+          iv_value = 'BatchValue' ) TO lt_tagset.
+
+        DATA(lo_operation) = NEW /aws1/cl_s3cjoboperation(
+          io_s3putobjecttagging = NEW /aws1/cl_s3cs3setobjecttagop( it_tagset = lt_tagset ) ).
+
+        " Create report configuration
+        DATA(lo_report) = NEW /aws1/cl_s3cjobreport(
+          iv_bucket      = gv_report_bucket_arn
+          iv_format      = 'Report_CSV_20180820'
+          iv_enabled     = abap_true
+          iv_prefix      = 'batch-op-reports'
+          iv_reportscope = 'AllTasks' ).
+
+        DATA(lo_result) = go_s3c->createjob(
+          iv_accountid             = gv_account_id
+          io_operation             = lo_operation
+          io_report                = lo_report
+          io_manifest              = lo_manifest
+          iv_priority              = 10
+          iv_rolearn               = gv_role_arn
+          iv_description           = 'Batch job for tagging objects'
+          iv_confirmationrequired  = abap_true ).
       CATCH /aws1/cx_rt_generic INTO lo_ex.
         cl_abap_unit_assert=>fail( msg = |Failed to create job: { lo_ex->get_text( ) }| ).
     ENDTRY.
@@ -459,12 +523,12 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
       cl_abap_unit_assert=>fail( msg = 'Job did not reach Ready or Suspended status in time' ).
     ENDIF.
 
-    " Update priority - this must succeed
+    " Update priority directly using SDK
     TRY.
-        DATA(lo_result) = go_s3c_actions->update_job_priority(
-          iv_account_id = gv_account_id
-          iv_job_id     = gv_job_id
-          iv_priority   = 60 ).
+        DATA(lo_result) = go_s3c->updatejobpriority(
+          iv_accountid = gv_account_id
+          iv_jobid     = gv_job_id
+          iv_priority  = 60 ).
       CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
         cl_abap_unit_assert=>fail( msg = |Failed to update job priority: { lo_ex->get_text( ) }| ).
     ENDTRY.
@@ -492,11 +556,11 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
     " Ensure we have a job created
     ensure_job_exists( ).
 
-    " Describe job - this must succeed
+    " Describe job directly using SDK
     TRY.
-        DATA(lo_result) = go_s3c_actions->describe_job(
-          iv_account_id = gv_account_id
-          iv_job_id     = gv_job_id ).
+        DATA(lo_result) = go_s3c->describejob(
+          iv_accountid = gv_account_id
+          iv_jobid     = gv_job_id ).
       CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
         cl_abap_unit_assert=>fail( msg = |Failed to describe job: { lo_ex->get_text( ) }| ).
     ENDTRY.
@@ -520,11 +584,11 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
     " Ensure we have a job created
     ensure_job_exists( ).
 
-    " Get job tags - this must succeed
+    " Get job tags directly using SDK
     TRY.
-        DATA(lo_result) = go_s3c_actions->get_job_tagging(
-          iv_account_id = gv_account_id
-          iv_job_id     = gv_job_id ).
+        DATA(lo_result) = go_s3c->getjobtagging(
+          iv_accountid = gv_account_id
+          iv_jobid     = gv_job_id ).
       CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
         cl_abap_unit_assert=>fail( msg = |Failed to get job tagging: { lo_ex->get_text( ) }| ).
     ENDTRY.
@@ -554,12 +618,12 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
       iv_key   = 'Team'
       iv_value = 'DataProcessing' ) TO lt_tags.
 
-    " Put job tags - this must succeed
+    " Put job tags directly using SDK
     TRY.
-        DATA(lo_result) = go_s3c_actions->put_job_tagging(
-          iv_account_id = gv_account_id
-          iv_job_id     = gv_job_id
-          it_tags       = lt_tags ).
+        DATA(lo_result) = go_s3c->putjobtagging(
+          iv_accountid = gv_account_id
+          iv_jobid     = gv_job_id
+          it_tags      = lt_tags ).
       CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
         cl_abap_unit_assert=>fail( msg = |Failed to put job tagging: { lo_ex->get_text( ) }| ).
     ENDTRY.
@@ -598,11 +662,11 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
     APPEND NEW /aws1/cl_s3cjobstatuslist_w( iv_value = 'Ready' ) TO lt_job_statuses.
     APPEND NEW /aws1/cl_s3cjobstatuslist_w( iv_value = 'Suspended' ) TO lt_job_statuses.
 
-    " List jobs - this must succeed
+    " List jobs directly using SDK
     TRY.
-        DATA(lo_result) = go_s3c_actions->list_jobs(
-          iv_account_id    = gv_account_id
-          it_job_statuses  = lt_job_statuses ).
+        DATA(lo_result) = go_s3c->listjobs(
+          iv_accountid   = gv_account_id
+          it_jobstatuses = lt_job_statuses ).
       CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
         cl_abap_unit_assert=>fail( msg = |Failed to list jobs: { lo_ex->get_text( ) }| ).
     ENDTRY.
@@ -649,11 +713,11 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
         cl_abap_unit_assert=>fail( msg = |Failed to add tags before deletion test: { lo_ex->get_text( ) }| ).
     ENDTRY.
 
-    " Delete job tags - this must succeed
+    " Delete job tags directly using SDK
     TRY.
-        DATA(lo_result) = go_s3c_actions->delete_job_tagging(
-          iv_account_id = gv_account_id
-          iv_job_id     = gv_job_id ).
+        DATA(lo_result) = go_s3c->deletejobtagging(
+          iv_accountid = gv_account_id
+          iv_jobid     = gv_job_id ).
       CATCH /aws1/cx_rt_generic INTO lo_ex.
         cl_abap_unit_assert=>fail( msg = |Failed to delete job tagging: { lo_ex->get_text( ) }| ).
     ENDTRY.
@@ -700,12 +764,12 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
       cl_abap_unit_assert=>fail( msg = 'Job did not reach Ready or Suspended status in time' ).
     ENDIF.
 
-    " Cancel the job - this must succeed
+    " Cancel the job directly using SDK
     TRY.
-        DATA(lo_result) = go_s3c_actions->update_job_status(
-          iv_account_id       = gv_account_id
-          iv_job_id           = gv_job_id
-          iv_requested_status = 'Cancelled' ).
+        DATA(lo_result) = go_s3c->updatejobstatus(
+          iv_accountid          = gv_account_id
+          iv_jobid              = gv_job_id
+          iv_requestedjobstatus = 'Cancelled' ).
       CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
         cl_abap_unit_assert=>fail( msg = |Failed to update job status: { lo_ex->get_text( ) }| ).
     ENDTRY.
