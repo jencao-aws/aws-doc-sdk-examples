@@ -401,7 +401,7 @@ CLASS /AWSEX/CL_IOT_ACTIONS IMPLEMENTATION.
         ).
 
         lo_iot->updateindexingconfiguration(
-          io_thingindexingconfiguration = lo_thing_indexing_config
+          io_thingindexingconf = lo_thing_indexing_config
         ).
         MESSAGE 'Indexing configuration updated successfully.' TYPE 'I'.
       CATCH /aws1/cx_iotthrottlingex.
