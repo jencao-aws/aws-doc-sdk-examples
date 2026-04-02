@@ -118,13 +118,13 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
     " e.g. iv_manifest_bucket = 'my-s3-batch-bucket'
     " e.g. iv_manifest_key = 'job-manifest.csv'
     " e.g. iv_manifest_etag = 'abc123def456'
-    DATA(lo_manifest_spec) = NEW /aws1/cl_s3cjobmanifestspec(
-      iv_format = 'S3BatchOperations_CSV_20180820' ).
-
     DATA lt_fields TYPE /aws1/cl_s3cjobmanifestfield00=>tt_jobmanifestfieldlist.
     APPEND NEW /aws1/cl_s3cjobmanifestfield00( iv_value = 'Bucket' ) TO lt_fields.
     APPEND NEW /aws1/cl_s3cjobmanifestfield00( iv_value = 'Key' ) TO lt_fields.
-    lo_manifest_spec->set_fields( lt_fields ).
+
+    DATA(lo_manifest_spec) = NEW /aws1/cl_s3cjobmanifestspec(
+      iv_format = 'S3BatchOperations_CSV_20180820'
+      it_fields = lt_fields ).
 
     DATA(lo_manifest) = NEW /aws1/cl_s3cjobmanifest(
       io_spec     = lo_manifest_spec
@@ -136,9 +136,8 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
       iv_key   = 'BatchTag'
       iv_value = 'BatchValue' ) TO lt_tagset.
 
-    DATA(lo_operation) = NEW /aws1/cl_s3cjoboperation( ).
-    lo_operation->set_s3putobjecttagging(
-      NEW /aws1/cl_s3cs3setobjecttagop( it_tagset = lt_tagset ) ).
+    DATA(lo_operation) = NEW /aws1/cl_s3cjoboperation(
+      io_s3putobjecttagging = NEW /aws1/cl_s3cs3setobjecttagop( it_tagset = lt_tagset ) ).
 
     " Create report configuration
     " e.g. iv_report_bucket = 'arn:aws:s3:::my-report-bucket'
