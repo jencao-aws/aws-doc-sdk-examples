@@ -605,7 +605,19 @@ CLASS ltc_awsex_cl_iot_actions IMPLEMENTATION.
 
     DATA(lv_shadow_state) = '{"state":{"desired":{"color":"red"}}}'.
     " Convert string to xstring for the API
-    DATA(lv_shadow_xstring) = /awsex/cl_utils=>string_to_xstring( lv_shadow_state ).
+    DATA lv_shadow_xstring TYPE xstring.
+    CALL FUNCTION 'SCMS_STRING_TO_XSTRING'
+      EXPORTING
+        text     = lv_shadow_state
+      IMPORTING
+        buffer   = lv_shadow_xstring
+      EXCEPTIONS
+        failed   = 1
+        OTHERS   = 2.
+    IF sy-subrc <> 0.
+      cl_abap_unit_assert=>fail( msg = 'Failed to convert shadow state to xstring' ).
+    ENDIF.
+    
     DATA(lo_result) = ao_iot_actions->update_thing_shadow(
       iv_thing_name = lv_test_thing
       iv_shadow_state = lv_shadow_xstring
