@@ -452,7 +452,8 @@ CLASS ltc_awsex_cl_iot_actions IMPLEMENTATION.
       act = lo_rule
       msg = |Topic rule was not created| ).
 
-    " Cleanup
+    " Cleanup - wait before delete to ensure rule is fully propagated
+    WAIT UP TO 10 SECONDS.
     TRY.
         ao_iot->deletetopicrule( iv_rulename = lv_test_rule ).
       CATCH /aws1/cx_rt_generic.
@@ -580,6 +581,9 @@ CLASS ltc_awsex_cl_iot_actions IMPLEMENTATION.
       iv_rulename = lv_test_rule
       io_topicrulepayload = lo_payload
     ).
+    
+    " Wait for rule to fully propagate before attempting delete
+    WAIT UP TO 10 SECONDS.
 
     ao_iot_actions->delete_topic_rule( lv_test_rule ).
 
