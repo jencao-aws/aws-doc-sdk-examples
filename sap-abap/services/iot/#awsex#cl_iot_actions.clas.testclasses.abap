@@ -115,7 +115,8 @@ CLASS ltc_awsex_cl_iot_actions IMPLEMENTATION.
       '{"Effect":"Allow","Action":["logs:CreateLogGroup","logs:CreateLogStream",' &&
       '"logs:PutLogEvents"],"Resource":"*"},' &&
       '{"Effect":"Allow","Action":["iot:CreateTopicRule","iot:DeleteTopicRule",' &&
-      '"iot:GetTopicRule","iot:ListTopicRules"],"Resource":"*"}]}'.
+      '"iot:GetTopicRule","iot:ListTopicRules","iot:ReplaceTopicRule"],"Resource":"*"},' &&
+      '{"Effect":"Allow","Action":["iam:PassRole"],"Resource":"*"}]}'.
 
     TRY.
         ao_iam->putrolepolicy(
@@ -130,8 +131,8 @@ CLASS ltc_awsex_cl_iot_actions IMPLEMENTATION.
         ).
     ENDTRY.
 
-    " Wait for IAM role to propagate
-    WAIT UP TO 15 SECONDS.
+    " Wait longer for IAM role and policies to propagate
+    WAIT UP TO 20 SECONDS.
 
     " Create a base certificate for tests to use
     TRY.
