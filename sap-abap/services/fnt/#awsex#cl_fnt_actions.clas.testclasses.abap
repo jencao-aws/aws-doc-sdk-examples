@@ -62,7 +62,8 @@ CLASS ltc_awsex_cl_fnt_actions IMPLEMENTATION.
           io_tagging = NEW /aws1/cl_s3_tagging( it_tagset = lt_tags ) ).
 
         " Upload a test file to the bucket
-        DATA(lv_test_content) = '<html><body><h1>CloudFront Test</h1></body></html>'.
+        DATA lv_test_content TYPE string.
+        lv_test_content = '<html><body><h1>CloudFront Test</h1></body></html>'.
         DATA lv_body TYPE xstring.
         lv_body = cl_abap_codepage=>convert_to( source = lv_test_content ).
         ao_s3->putobject(
@@ -70,10 +71,13 @@ CLASS ltc_awsex_cl_fnt_actions IMPLEMENTATION.
           iv_key = 'index.html'
           iv_body = lv_body ).
 
+        MESSAGE 'S3 bucket created and tagged: ' && av_bucket_name TYPE 'I'.
+
         " Step 2: Create Origin Access Control
         MESSAGE 'Creating Origin Access Control...' TYPE 'I'.
         DATA(lo_oac_config) = NEW /aws1/cl_fntoriginaccctlconfig(
-          iv_name = |oac-{ av_bucket_name }|
+          iv_name = |oac-{ lv_uuid }|
+          iv_description = 'OAC for CloudFront test'
           iv_signingprotocol = 'sigv4'
           iv_signingbehavior = 'always'
           iv_originaccessctlorigintype = 's3'
@@ -165,15 +169,15 @@ CLASS ltc_awsex_cl_fnt_actions IMPLEMENTATION.
         " Step 4: Update S3 bucket policy to allow CloudFront access
         MESSAGE 'Updating S3 bucket policy...' TYPE 'I'.
         DATA(lv_bucket_policy) =
-          |{{ "Version":"2012-10-17", | &&
-          |"Statement":[{{ | &&
-          |"Sid":"AllowCloudFrontServicePrincipal",| &&
-          |"Effect":"Allow",| &&
-          |"Principal":{{ "Service":"cloudfront.amazonaws.com" }},| &&
-          |"Action":"s3:GetObject",| &&
+          |{ '{"Version":"2012-10-17",' }| &&
+          |{ '"Statement":[{' }| &&
+          |{ '"Sid":"AllowCloudFrontServicePrincipal",' }| &&
+          |{ '"Effect":"Allow",' }| &&
+          |{ '"Principal":{ "Service":"cloudfront.amazonaws.com" },' }| &&
+          |{ '"Action":"s3:GetObject",' }| &&
           |"Resource":"arn:aws:s3:::{ av_bucket_name }/*",| &&
-          |"Condition":{{ "StringEquals":{{ | &&
-          |"AWS:SourceArn":"{ lv_dist_arn }" }} }} }} ]] }}|.
+          |{ '"Condition":{ "StringEquals":{ ' }| &&
+          |"AWS:SourceArn":"{ lv_dist_arn }" } } } ] }|.
 
         ao_s3->putbucketpolicy(
           iv_bucket = av_bucket_name
@@ -201,7 +205,8 @@ CLASS ltc_awsex_cl_fnt_actions IMPLEMENTATION.
               ELSE.
                 " Log progress every 30 seconds (every 3 attempts)
                 IF lv_attempt MOD 3 = 0.
-                  MESSAGE |Deployment in progress... Status: { lv_status } (attempt { lv_attempt }/{ lv_max_attempts })| TYPE 'I'.
+                  DATA(lv_progress_msg) = |Deployment in progress... Status: { lv_status } (attempt { lv_attempt }/{ lv_max_attempts })|.
+                  MESSAGE lv_progress_msg TYPE 'I'.
                 ENDIF.
               ENDIF.
             CATCH /aws1/cx_rt_generic.
@@ -253,23 +258,6 @@ CLASS ltc_awsex_cl_fnt_actions IMPLEMENTATION.
       MESSAGE '- Origin Access Control: ' && av_oac_id && ' (will NOT be deleted due to CloudFront dependency)' TYPE 'I'.
     ENDIF.
     MESSAGE 'Please manually delete these resources after disabling the distribution.' TYPE 'I'.
-
-    " Do not clean up resources - they are tagged for manual cleanup
-    " Uncomment the following to enable cleanup (not recommended for CI/CD)
-    " IF av_distribution_id IS NOT INITIAL.
-    "   TRY.
-    "     " Disable and delete distribution
-    "     DATA(lo_config) = ao_fnt->getdistributionconfig( iv_id = av_distribution_id ).
-    "     DATA(lo_dist_config) = lo_config->get_distributionconfig( ).
-    "     lo_dist_config->set_enabled( abap_false ).
-    "     ao_fnt->updatedistribution(
-    "       iv_id = av_distribution_id
-    "       io_distributionconfig = lo_dist_config
-    "       iv_ifmatch = lo_config->get_etag( ) ).
-    "     " Wait and delete...
-    "   CATCH /aws1/cx_rt_generic.
-    "   ENDTRY.
-    " ENDIF.
   ENDMETHOD.
 
   METHOD list_distributions.
