@@ -94,10 +94,30 @@ CLASS ltc_awsex_cl_s3_actions IMPLEMENTATION.
     DATA lt_tags TYPE /aws1/cl_s3_tag=>tt_tagset.
     APPEND NEW /aws1/cl_s3_tag( iv_key = 'convert_test' iv_value = 'true' ) TO lt_tags.
 
-    /awsex/cl_utils=>create_bucket( iv_bucket = av_bucket io_s3 = ao_s3 io_session = ao_session ).
-    /awsex/cl_utils=>create_bucket( iv_bucket = av_src_bucket io_s3 = ao_s3 io_session = ao_session ).
-    /awsex/cl_utils=>create_bucket( iv_bucket = av_dest_bucket io_s3 = ao_s3 io_session = ao_session ).
-    /awsex/cl_utils=>create_bucket( iv_bucket = av_bucket_delete io_s3 = ao_s3 io_session = ao_session ).
+    " Create buckets, handling case where they already exist
+    TRY.
+        /awsex/cl_utils=>create_bucket( iv_bucket = av_bucket io_s3 = ao_s3 io_session = ao_session ).
+      CATCH /aws1/cx_s3_bktalrdyownedbyyou.
+        " Bucket already exists from previous run, continue
+    ENDTRY.
+
+    TRY.
+        /awsex/cl_utils=>create_bucket( iv_bucket = av_src_bucket io_s3 = ao_s3 io_session = ao_session ).
+      CATCH /aws1/cx_s3_bktalrdyownedbyyou.
+        " Bucket already exists from previous run, continue
+    ENDTRY.
+
+    TRY.
+        /awsex/cl_utils=>create_bucket( iv_bucket = av_dest_bucket io_s3 = ao_s3 io_session = ao_session ).
+      CATCH /aws1/cx_s3_bktalrdyownedbyyou.
+        " Bucket already exists from previous run, continue
+    ENDTRY.
+
+    TRY.
+        /awsex/cl_utils=>create_bucket( iv_bucket = av_bucket_delete io_s3 = ao_s3 io_session = ao_session ).
+      CATCH /aws1/cx_s3_bktalrdyownedbyyou.
+        " Bucket already exists from previous run, continue
+    ENDTRY.
 
     " Tag all standard buckets
     TRY.
@@ -128,7 +148,12 @@ CLASS ltc_awsex_cl_s3_actions IMPLEMENTATION.
         " Tag the lock bucket
         ao_s3->putbuckettagging( iv_bucket = av_lock_bucket io_tagging = NEW /aws1/cl_s3_tagging( it_tagset = lt_tags ) ).
       CATCH /aws1/cx_s3_bktalrdyownedbyyou.
-        " Bucket already exists, continue
+        " Bucket already exists, tag it anyway
+        TRY.
+            ao_s3->putbuckettagging( iv_bucket = av_lock_bucket io_tagging = NEW /aws1/cl_s3_tagging( it_tagset = lt_tags ) ).
+          CATCH /aws1/cx_rt_generic.
+            " Ignore tagging errors
+        ENDTRY.
       CATCH /aws1/cx_rt_generic.
         " Ignore other errors during setup
     ENDTRY.
