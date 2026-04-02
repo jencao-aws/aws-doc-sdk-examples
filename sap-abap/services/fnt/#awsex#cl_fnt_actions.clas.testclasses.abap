@@ -221,7 +221,7 @@ CLASS ltc_awsex_cl_fnt_actions IMPLEMENTATION.
 
         MESSAGE 'CloudFront test resources created successfully.' TYPE 'I'.
 
-      CATCH /aws1/cx_s3_bucketalreadyexists INTO DATA(lo_bucket_exists).
+      CATCH /aws1/cx_s3_bucketalrdyexists INTO DATA(lo_bucket_exists).
         DATA(lv_error) = |Bucket already exists: { lo_bucket_exists->if_message~get_text( ) }|.
         cl_abap_unit_assert=>fail( msg = lv_error ).
       CATCH /aws1/cx_rt_generic INTO DATA(lo_generic_ex).
