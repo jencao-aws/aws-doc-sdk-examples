@@ -150,27 +150,17 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
 
     " e.g. iv_account_id = '123456789012'
     " e.g. iv_role_arn = 'arn:aws:iam::123456789012:role/S3BatchRole'
-    TRY.
-        oo_result = lo_s3c->createjob(
-          iv_accountid             = iv_account_id
-          io_operation             = lo_operation
-          io_report                = lo_report
-          io_manifest              = lo_manifest
-          iv_priority              = 10
-          iv_rolearn               = iv_role_arn
-          iv_description           = 'Batch job for tagging objects'
-          iv_confirmationrequired  = abap_true ).
+    oo_result = lo_s3c->createjob(
+      iv_accountid             = iv_account_id
+      io_operation             = lo_operation
+      io_report                = lo_report
+      io_manifest              = lo_manifest
+      iv_priority              = 10
+      iv_rolearn               = iv_role_arn
+      iv_description           = 'Batch job for tagging objects'
+      iv_confirmationrequired  = abap_true ).
 
-        MESSAGE 'S3 Batch job created successfully' TYPE 'I'.
-      CATCH /aws1/cx_s3cbadrequestex INTO DATA(lo_bad_request_ex).
-        MESSAGE lo_bad_request_ex->get_text( ) TYPE 'I'.
-      CATCH /aws1/cx_s3cidempotencyex INTO DATA(lo_idempotency_ex).
-        MESSAGE lo_idempotency_ex->get_text( ) TYPE 'I'.
-      CATCH /aws1/cx_s3cinternalserviceex INTO DATA(lo_service_ex).
-        MESSAGE lo_service_ex->get_text( ) TYPE 'I'.
-      CATCH /aws1/cx_s3ctoomanyrequestsex INTO DATA(lo_too_many_ex).
-        MESSAGE lo_too_many_ex->get_text( ) TYPE 'I'.
-    ENDTRY.
+    MESSAGE 'S3 Batch job created successfully' TYPE 'I'.
     " snippet-end:[s3c.abapv1.create_job]
   ENDMETHOD.
 
@@ -185,22 +175,12 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
     " e.g. iv_account_id = '123456789012'
     " e.g. iv_job_id = 'a1b2c3d4-5678-90ab-cdef-example11111'
     " e.g. iv_priority = 60
-    TRY.
-        oo_result = lo_s3c->updatejobpriority(
-          iv_accountid = iv_account_id
-          iv_jobid     = iv_job_id
-          iv_priority  = iv_priority ).
+    oo_result = lo_s3c->updatejobpriority(
+      iv_accountid = iv_account_id
+      iv_jobid     = iv_job_id
+      iv_priority  = iv_priority ).
 
-        MESSAGE 'Job priority updated successfully' TYPE 'I'.
-      CATCH /aws1/cx_s3cbadrequestex INTO DATA(lo_bad_request_ex).
-        MESSAGE lo_bad_request_ex->get_text( ) TYPE 'I'.
-      CATCH /aws1/cx_s3cinternalserviceex INTO DATA(lo_service_ex).
-        MESSAGE lo_service_ex->get_text( ) TYPE 'I'.
-      CATCH /aws1/cx_s3cnotfoundexception INTO DATA(lo_not_found_ex).
-        MESSAGE lo_not_found_ex->get_text( ) TYPE 'I'.
-      CATCH /aws1/cx_s3ctoomanyrequestsex INTO DATA(lo_too_many_ex).
-        MESSAGE lo_too_many_ex->get_text( ) TYPE 'I'.
-    ENDTRY.
+    MESSAGE 'Job priority updated successfully' TYPE 'I'.
     " snippet-end:[s3c.abapv1.update_job_priority]
   ENDMETHOD.
 
@@ -215,24 +195,12 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
     " e.g. iv_account_id = '123456789012'
     " e.g. iv_job_id = 'a1b2c3d4-5678-90ab-cdef-example11111'
     " e.g. iv_requested_status = 'Cancelled' or 'Ready'
-    TRY.
-        oo_result = lo_s3c->updatejobstatus(
-          iv_accountid         = iv_account_id
-          iv_jobid             = iv_job_id
-          iv_requestedjobstatus = iv_requested_status ).
+    oo_result = lo_s3c->updatejobstatus(
+      iv_accountid         = iv_account_id
+      iv_jobid             = iv_job_id
+      iv_requestedjobstatus = iv_requested_status ).
 
-        MESSAGE 'Job status updated successfully' TYPE 'I'.
-      CATCH /aws1/cx_s3cbadrequestex INTO DATA(lo_bad_request_ex).
-        MESSAGE lo_bad_request_ex->get_text( ) TYPE 'I'.
-      CATCH /aws1/cx_s3cinternalserviceex INTO DATA(lo_service_ex).
-        MESSAGE lo_service_ex->get_text( ) TYPE 'I'.
-      CATCH /aws1/cx_s3cjobstatusexception INTO DATA(lo_job_status_ex).
-        MESSAGE lo_job_status_ex->get_text( ) TYPE 'I'.
-      CATCH /aws1/cx_s3cnotfoundexception INTO DATA(lo_not_found_ex).
-        MESSAGE lo_not_found_ex->get_text( ) TYPE 'I'.
-      CATCH /aws1/cx_s3ctoomanyrequestsex INTO DATA(lo_too_many_ex).
-        MESSAGE lo_too_many_ex->get_text( ) TYPE 'I'.
-    ENDTRY.
+    MESSAGE 'Job status updated successfully' TYPE 'I'.
     " snippet-end:[s3c.abapv1.update_job_status]
   ENDMETHOD.
 
@@ -246,23 +214,13 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
     " snippet-start:[s3c.abapv1.describe_job]
     " e.g. iv_account_id = '123456789012'
     " e.g. iv_job_id = 'a1b2c3d4-5678-90ab-cdef-example11111'
-    TRY.
-        oo_result = lo_s3c->describejob(
-          iv_accountid = iv_account_id
-          iv_jobid     = iv_job_id ).
+    oo_result = lo_s3c->describejob(
+      iv_accountid = iv_account_id
+      iv_jobid     = iv_job_id ).
 
-        DATA(lo_job) = oo_result->get_job( ).
-        DATA(lv_msg) = |Job Status: { lo_job->get_status( ) }|.
-        MESSAGE lv_msg TYPE 'I'.
-      CATCH /aws1/cx_s3cbadrequestex INTO DATA(lo_bad_request_ex).
-        MESSAGE lo_bad_request_ex->get_text( ) TYPE 'I'.
-      CATCH /aws1/cx_s3cinternalserviceex INTO DATA(lo_service_ex).
-        MESSAGE lo_service_ex->get_text( ) TYPE 'I'.
-      CATCH /aws1/cx_s3cnotfoundexception INTO DATA(lo_not_found_ex).
-        MESSAGE lo_not_found_ex->get_text( ) TYPE 'I'.
-      CATCH /aws1/cx_s3ctoomanyrequestsex INTO DATA(lo_too_many_ex).
-        MESSAGE lo_too_many_ex->get_text( ) TYPE 'I'.
-    ENDTRY.
+    DATA(lo_job) = oo_result->get_job( ).
+    DATA(lv_msg) = |Job Status: { lo_job->get_status( ) }|.
+    MESSAGE lv_msg TYPE 'I'.
     " snippet-end:[s3c.abapv1.describe_job]
   ENDMETHOD.
 
@@ -276,22 +234,14 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
     " snippet-start:[s3c.abapv1.get_job_tagging]
     " e.g. iv_account_id = '123456789012'
     " e.g. iv_job_id = 'a1b2c3d4-5678-90ab-cdef-example11111'
-    TRY.
-        oo_result = lo_s3c->getjobtagging(
-          iv_accountid = iv_account_id
-          iv_jobid     = iv_job_id ).
+    oo_result = lo_s3c->getjobtagging(
+      iv_accountid = iv_account_id
+      iv_jobid     = iv_job_id ).
 
-        DATA(lt_tags) = oo_result->get_tags( ).
-        DATA(lv_tag_count) = lines( lt_tags ).
-        DATA(lv_msg) = |Job has { lv_tag_count } tags|.
-        MESSAGE lv_msg TYPE 'I'.
-      CATCH /aws1/cx_s3cinternalserviceex INTO DATA(lo_service_ex).
-        MESSAGE lo_service_ex->get_text( ) TYPE 'I'.
-      CATCH /aws1/cx_s3cnotfoundexception INTO DATA(lo_not_found_ex).
-        MESSAGE lo_not_found_ex->get_text( ) TYPE 'I'.
-      CATCH /aws1/cx_s3ctoomanyrequestsex INTO DATA(lo_too_many_ex).
-        MESSAGE lo_too_many_ex->get_text( ) TYPE 'I'.
-    ENDTRY.
+    DATA(lt_tags) = oo_result->get_tags( ).
+    DATA(lv_tag_count) = lines( lt_tags ).
+    DATA(lv_msg) = |Job has { lv_tag_count } tags|.
+    MESSAGE lv_msg TYPE 'I'.
     " snippet-end:[s3c.abapv1.get_job_tagging]
   ENDMETHOD.
 
@@ -306,22 +256,12 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
     " e.g. iv_account_id = '123456789012'
     " e.g. iv_job_id = 'a1b2c3d4-5678-90ab-cdef-example11111'
     " e.g. it_tags contains tags like Environment=Development, Team=DataProcessing
-    TRY.
-        oo_result = lo_s3c->putjobtagging(
-          iv_accountid = iv_account_id
-          iv_jobid     = iv_job_id
-          it_tags      = it_tags ).
+    oo_result = lo_s3c->putjobtagging(
+      iv_accountid = iv_account_id
+      iv_jobid     = iv_job_id
+      it_tags      = it_tags ).
 
-        MESSAGE 'Job tags added successfully' TYPE 'I'.
-      CATCH /aws1/cx_s3cinternalserviceex INTO DATA(lo_service_ex).
-        MESSAGE lo_service_ex->get_text( ) TYPE 'I'.
-      CATCH /aws1/cx_s3cnotfoundexception INTO DATA(lo_not_found_ex).
-        MESSAGE lo_not_found_ex->get_text( ) TYPE 'I'.
-      CATCH /aws1/cx_s3ctoomanyrequestsex INTO DATA(lo_too_many_ex).
-        MESSAGE lo_too_many_ex->get_text( ) TYPE 'I'.
-      CATCH /aws1/cx_s3ctoomanytagsex INTO DATA(lo_too_many_tags_ex).
-        MESSAGE lo_too_many_tags_ex->get_text( ) TYPE 'I'.
-    ENDTRY.
+    MESSAGE 'Job tags added successfully' TYPE 'I'.
     " snippet-end:[s3c.abapv1.put_job_tagging]
   ENDMETHOD.
 
@@ -335,22 +275,14 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
     " snippet-start:[s3c.abapv1.list_jobs]
     " e.g. iv_account_id = '123456789012'
     " e.g. it_job_statuses can contain 'Active', 'Complete', 'Cancelled', etc.
-    TRY.
-        oo_result = lo_s3c->listjobs(
-          iv_accountid   = iv_account_id
-          it_jobstatuses = it_job_statuses ).
+    oo_result = lo_s3c->listjobs(
+      iv_accountid   = iv_account_id
+      it_jobstatuses = it_job_statuses ).
 
-        DATA(lt_jobs) = oo_result->get_jobs( ).
-        DATA(lv_job_count) = lines( lt_jobs ).
-        DATA(lv_msg) = |Found { lv_job_count } jobs|.
-        MESSAGE lv_msg TYPE 'I'.
-      CATCH /aws1/cx_s3cinternalserviceex INTO DATA(lo_service_ex).
-        MESSAGE lo_service_ex->get_text( ) TYPE 'I'.
-      CATCH /aws1/cx_s3cinvalidnexttokenex INTO DATA(lo_invalid_token_ex).
-        MESSAGE lo_invalid_token_ex->get_text( ) TYPE 'I'.
-      CATCH /aws1/cx_s3cinvalidrequestex INTO DATA(lo_invalid_request_ex).
-        MESSAGE lo_invalid_request_ex->get_text( ) TYPE 'I'.
-    ENDTRY.
+    DATA(lt_jobs) = oo_result->get_jobs( ).
+    DATA(lv_job_count) = lines( lt_jobs ).
+    DATA(lv_msg) = |Found { lv_job_count } jobs|.
+    MESSAGE lv_msg TYPE 'I'.
     " snippet-end:[s3c.abapv1.list_jobs]
   ENDMETHOD.
 
@@ -364,19 +296,11 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
     " snippet-start:[s3c.abapv1.delete_job_tagging]
     " e.g. iv_account_id = '123456789012'
     " e.g. iv_job_id = 'a1b2c3d4-5678-90ab-cdef-example11111'
-    TRY.
-        oo_result = lo_s3c->deletejobtagging(
-          iv_accountid = iv_account_id
-          iv_jobid     = iv_job_id ).
+    oo_result = lo_s3c->deletejobtagging(
+      iv_accountid = iv_account_id
+      iv_jobid     = iv_job_id ).
 
-        MESSAGE 'Job tags deleted successfully' TYPE 'I'.
-      CATCH /aws1/cx_s3cinternalserviceex INTO DATA(lo_service_ex).
-        MESSAGE lo_service_ex->get_text( ) TYPE 'I'.
-      CATCH /aws1/cx_s3cnotfoundexception INTO DATA(lo_not_found_ex).
-        MESSAGE lo_not_found_ex->get_text( ) TYPE 'I'.
-      CATCH /aws1/cx_s3ctoomanyrequestsex INTO DATA(lo_too_many_ex).
-        MESSAGE lo_too_many_ex->get_text( ) TYPE 'I'.
-    ENDTRY.
+    MESSAGE 'Job tags deleted successfully' TYPE 'I'.
     " snippet-end:[s3c.abapv1.delete_job_tagging]
   ENDMETHOD.
 ENDCLASS.
