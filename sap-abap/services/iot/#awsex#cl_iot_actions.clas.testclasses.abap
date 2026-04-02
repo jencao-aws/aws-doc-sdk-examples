@@ -90,7 +90,7 @@ CLASS ltc_awsex_cl_iot_actions IMPLEMENTATION.
     TRY.
         " Create the IAM role
         DATA(lo_role_result) = ao_iam->createrole(
-          iv_rolename = lv_role_name
+          iv_rolename = av_role_name
           iv_assumerolepolicydocument = lv_assume_role_policy
           it_tags = VALUE /aws1/cl_iamtag=>tt_taglisttype(
             ( NEW /aws1/cl_iamtag( iv_key = 'convert_test' iv_value = 'true' ) )
@@ -109,14 +109,15 @@ CLASS ltc_awsex_cl_iot_actions IMPLEMENTATION.
     ENDTRY.
 
     " Attach comprehensive policy to role - must include all necessary permissions
-    DATA(lv_policy_document) = |{ '{' }"Version":"2012-10-17","Statement":[| &&
-      |{ '{' }"Effect":"Allow","Action":["sns:Publish"],"Resource":"{ av_sns_topic_arn }"{ '}' },| &&
-      |{ '{' }"Effect":"Allow","Action":["logs:CreateLogGroup","logs:CreateLogStream",| &&
-      |"logs:PutLogEvents"],"Resource":"*"{ '}' }]{ '}' }|.
+    DATA(lv_sns_arn) = av_sns_topic_arn.
+    DATA(lv_policy_document) = '{"Version":"2012-10-17","Statement":[' &&
+      '{"Effect":"Allow","Action":["sns:Publish"],"Resource":"' && lv_sns_arn && '"},' &&
+      '{"Effect":"Allow","Action":["logs:CreateLogGroup","logs:CreateLogStream",' &&
+      '"logs:PutLogEvents"],"Resource":"*"}]}'.
 
     TRY.
         ao_iam->putrolepolicy(
-          iv_rolename = lv_role_name
+          iv_rolename = av_role_name
           iv_policyname = 'IoTSNSPublish'
           iv_policydocument = lv_policy_document
         ).
@@ -602,7 +603,7 @@ CLASS ltc_awsex_cl_iot_actions IMPLEMENTATION.
       CATCH /aws1/cx_iotresrcalrdyexistsex.
     ENDTRY.
 
-    DATA(lv_shadow_state) = |{ '{' }"state":{ '{' }"desired":{ '{' }"color":"red"{ '}' }{ '}' }{ '}' }|.
+    DATA(lv_shadow_state) = '{"state":{"desired":{"color":"red"}}}'.
     DATA(lo_result) = ao_iot_actions->update_thing_shadow(
       iv_thing_name = lv_test_thing
       iv_shadow_state = lv_shadow_state
@@ -630,7 +631,7 @@ CLASS ltc_awsex_cl_iot_actions IMPLEMENTATION.
       CATCH /aws1/cx_iotresrcalrdyexistsex.
     ENDTRY.
 
-    DATA(lv_shadow_state) = |{ '{' }"state":{ '{' }"desired":{ '{' }"color":"blue"{ '}' }{ '}' }{ '}' }|.
+    DATA(lv_shadow_state) = '{"state":{"desired":{"color":"blue"}}}'.
     TRY.
         ao_iop->updatethingshadow(
           iv_thingname = lv_test_thing
