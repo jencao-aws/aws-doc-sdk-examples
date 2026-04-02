@@ -136,9 +136,15 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
 
   METHOD create_manifest_and_files.
     " Upload sample files to the bucket for batch operations
-    DATA(lv_file1_content) = 'Sample content for file 1'.
-    DATA(lv_file2_content) = 'Sample content for file 2'.
-    DATA(lv_file3_content) = 'Sample content for file 3'.
+    " Convert strings to proper S3 streaming blob type
+    DATA lv_file1_content TYPE /aws1/s3_streamingblob.
+    DATA lv_file2_content TYPE /aws1/s3_streamingblob.
+    DATA lv_file3_content TYPE /aws1/s3_streamingblob.
+    DATA lv_manifest_content TYPE /aws1/s3_streamingblob.
+
+    lv_file1_content = /aws1/cl_rt_util=>string_to_xstring( 'Sample content for file 1' ).
+    lv_file2_content = /aws1/cl_rt_util=>string_to_xstring( 'Sample content for file 2' ).
+    lv_file3_content = /aws1/cl_rt_util=>string_to_xstring( 'Sample content for file 3' ).
 
     TRY.
         go_s3->putobject(
@@ -160,9 +166,10 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
     ENDTRY.
 
     " Create and upload manifest file
-    DATA(lv_manifest_content) = |{ gv_bucket_name },file1.txt\n| &&
-                                 |{ gv_bucket_name },file2.txt\n| &&
-                                 |{ gv_bucket_name },file3.txt\n|.
+    DATA(lv_manifest_string) = |{ gv_bucket_name },file1.txt\n| &&
+                                |{ gv_bucket_name },file2.txt\n| &&
+                                |{ gv_bucket_name },file3.txt\n|.
+    lv_manifest_content = /aws1/cl_rt_util=>string_to_xstring( lv_manifest_string ).
 
     TRY.
         go_s3->putobject(
@@ -191,7 +198,7 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
           iv_description              = 'Role for S3 Batch Operations testing' ).
         gv_role_arn = lo_create_role->get_role( )->get_arn( ).
 
-      CATCH /aws1/cx_iamentityalrdyexists.
+      CATCH /aws1/cx_iamentityalrdyexex.
         " Role already exists from previous failed run, get the ARN
         TRY.
             DATA(lo_get_role) = go_iam->getrole( iv_rolename = gv_role_name ).
@@ -257,7 +264,7 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
           iv_description    = 'Policy for S3 Batch Operations' ).
         gv_policy_arn = lo_create_policy->get_policy( )->get_arn( ).
 
-      CATCH /aws1/cx_iamentityalrdyexists.
+      CATCH /aws1/cx_iamentityalrdyexex.
         " Policy already exists, construct ARN manually
         gv_policy_arn = |arn:aws:iam::{ gv_account_id }:policy/{ lv_policy_name }|.
 
