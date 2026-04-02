@@ -55,19 +55,20 @@ CLASS ltc_awsex_cl_iot_actions IMPLEMENTATION.
     ao_iam = /aws1/cl_iam_factory=>create( ao_session ).
     ao_iot_actions = NEW /awsex/cl_iot_actions( ).
 
-    " Generate unique names for test resources
+    " Generate unique names for test resources using utils
     DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
-    av_thing_name = |sapabap-test-thing-{ lv_uuid }|.
-    av_topic_rule_name = |sapabap_test_rule_{ lv_uuid }|.
+    av_thing_name = |sapabap-iot-thing-{ lv_uuid }|.
+    av_topic_rule_name = |sapabap_iot_rule_{ lv_uuid }|.
+    av_role_name = |sapabap-iot-role-{ lv_uuid }|.
 
-    " Create SNS topic for topic rule - must be created in setup
+    " Step 1: Create SNS topic - must be created and tagged
     TRY.
         DATA(lo_topic_result) = ao_sns->createtopic(
-          iv_name = |sapabap-iot-test-topic-{ lv_uuid }|
+          iv_name = |sapabap-iot-topic-{ lv_uuid }|
         ).
         av_sns_topic_arn = lo_topic_result->get_topicarn( ).
 
-        " Tag SNS topic for cleanup - must succeed
+        " Tag SNS topic with convert_test tag
         ao_sns->tagresource(
           iv_resourcearn = av_sns_topic_arn
           it_tags = VALUE /aws1/cl_snstag=>tt_taglist(
@@ -75,22 +76,20 @@ CLASS ltc_awsex_cl_iot_actions IMPLEMENTATION.
           )
         ).
       CATCH /aws1/cx_rt_generic INTO DATA(lo_sns_ex).
-        " If SNS topic creation fails, fail the setup
         cl_abap_unit_assert=>fail(
           msg = |Failed to create SNS topic: { lo_sns_ex->get_text( ) }|
         ).
     ENDTRY.
 
-    " Create IAM role for IoT topic rule - must be created in setup
-    DATA(lv_assume_role_policy) = |{ '{' }"Version":"2012-10-17","Statement":[{| &&
-      |"Effect":"Allow","Principal":{ '{' }"Service":"iot.amazonaws.com"{ '}' },| &&
-      |"Action":"sts:AssumeRole"{ '}' }]{ '}' }|.
+    " Step 2: Create IAM role for IoT with comprehensive permissions
+    DATA(lv_assume_role_policy) = '{"Version":"2012-10-17","Statement":[' &&
+      '{"Effect":"Allow","Principal":{"Service":"iot.amazonaws.com"},' &&
+      '"Action":"sts:AssumeRole"}]}'.
 
-    DATA(lv_role_name) = |sapabap-iot-test-role-{ lv_uuid }|.
     TRY.
-        " Create the IAM role
+        " Create the IAM role with convert_test tag
         DATA(lo_role_result) = ao_iam->createrole(
-          iv_rolename = lv_role_name
+          iv_rolename = av_role_name
           iv_assumerolepolicydocument = lv_assume_role_policy
           it_tags = VALUE /aws1/cl_iamtag=>tt_taglisttype(
             ( NEW /aws1/cl_iamtag( iv_key = 'convert_test' iv_value = 'true' ) )
@@ -98,30 +97,31 @@ CLASS ltc_awsex_cl_iot_actions IMPLEMENTATION.
         ).
         av_role_arn = lo_role_result->get_role( )->get_arn( ).
       CATCH /aws1/cx_iamentityalrdyexistsex.
-        " If role exists from previous run, get it and continue
-        DATA(lo_get_role) = ao_iam->getrole( iv_rolename = lv_role_name ).
+        " Role exists from previous run, retrieve it
+        DATA(lo_get_role) = ao_iam->getrole( iv_rolename = av_role_name ).
         av_role_arn = lo_get_role->get_role( )->get_arn( ).
       CATCH /aws1/cx_rt_generic INTO DATA(lo_iam_ex).
-        " If role creation fails, fail the setup
         cl_abap_unit_assert=>fail(
           msg = |Failed to create IAM role: { lo_iam_ex->get_text( ) }|
         ).
     ENDTRY.
 
-    " Attach comprehensive policy to role - must include all necessary permissions
-    DATA(lv_policy_document) = |{ '{' }"Version":"2012-10-17","Statement":[| &&
-      |{ '{' }"Effect":"Allow","Action":["sns:Publish"],"Resource":"{ av_sns_topic_arn }"{ '}' },| &&
-      |{ '{' }"Effect":"Allow","Action":["logs:CreateLogGroup","logs:CreateLogStream",| &&
-      |"logs:PutLogEvents"],"Resource":"*"{ '}' }]{ '}' }|.
+    " Step 3: Attach comprehensive policy with all required permissions
+    DATA(lv_sns_arn) = av_sns_topic_arn.
+    DATA(lv_policy_document) = '{"Version":"2012-10-17","Statement":[' &&
+      '{"Effect":"Allow","Action":["sns:Publish","sns:Subscribe"],' &&
+      '"Resource":"' && lv_sns_arn && '"},' &&
+      '{"Effect":"Allow","Action":["logs:CreateLogGroup","logs:CreateLogStream",' &&
+      '"logs:PutLogEvents","logs:DescribeLogStreams"],"Resource":"*"},' &&
+      '{"Effect":"Allow","Action":["iot:Publish"],"Resource":"*"}]}'.
 
     TRY.
         ao_iam->putrolepolicy(
-          iv_rolename = lv_role_name
-          iv_policyname = 'IoTSNSPublish'
+          iv_rolename = av_role_name
+          iv_policyname = 'IoTComprehensivePolicy'
           iv_policydocument = lv_policy_document
         ).
       CATCH /aws1/cx_rt_generic INTO DATA(lo_policy_ex).
-        " If policy attachment fails, fail the setup
         cl_abap_unit_assert=>fail(
           msg = |Failed to attach policy to role: { lo_policy_ex->get_text( ) }|
         ).
@@ -130,22 +130,21 @@ CLASS ltc_awsex_cl_iot_actions IMPLEMENTATION.
     " Wait for IAM role to propagate
     WAIT UP TO 15 SECONDS.
 
-    " Create a base certificate for tests to use
+    " Step 4: Create base certificate for tests - must succeed
     TRY.
         DATA(lo_cert_result) = ao_iot->createkeysandcertificate( iv_setasactive = abap_true ).
         av_cert_id = lo_cert_result->get_certificateid( ).
         av_cert_arn = lo_cert_result->get_certificatearn( ).
 
         " Wait for certificate to be ready
-        WAIT UP TO 2 SECONDS.
+        WAIT UP TO 3 SECONDS.
       CATCH /aws1/cx_rt_generic INTO DATA(lo_cert_ex).
-        " If certificate creation fails, fail the setup
         cl_abap_unit_assert=>fail(
           msg = |Failed to create base certificate: { lo_cert_ex->get_text( ) }|
         ).
     ENDTRY.
 
-    " Enable thing indexing for search tests
+    " Step 5: Enable thing indexing for search functionality
     TRY.
         DATA(lo_thing_indexing_config) = NEW /aws1/cl_iotthingindexingconf(
           iv_thingindexingmode = 'REGISTRY'
@@ -161,30 +160,7 @@ CLASS ltc_awsex_cl_iot_actions IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD class_teardown.
-    " Clean up thing if it exists
-    IF av_thing_name IS NOT INITIAL.
-      TRY.
-          " First detach any principals
-          DATA(lo_principals) = ao_iot->listthingprincipals( iv_thingname = av_thing_name ).
-          LOOP AT lo_principals->get_principals( ) INTO DATA(lv_principal).
-            TRY.
-                ao_iot->detachthingprincipal(
-                  iv_thingname = av_thing_name
-                  iv_principal = lv_principal->get_value( )
-                ).
-              CATCH /aws1/cx_rt_generic.
-                " Ignore detach errors
-            ENDTRY.
-          ENDLOOP.
-
-          " Delete thing
-          ao_iot->deletething( iv_thingname = av_thing_name ).
-        CATCH /aws1/cx_rt_generic.
-          " Thing might already be deleted
-      ENDTRY.
-    ENDIF.
-
-    " Clean up certificate
+    " Clean up base certificate
     IF av_cert_id IS NOT INITIAL.
       TRY.
           ao_iot->updatecertificate(
@@ -194,15 +170,6 @@ CLASS ltc_awsex_cl_iot_actions IMPLEMENTATION.
           ao_iot->deletecertificate( iv_certificateid = av_cert_id ).
         CATCH /aws1/cx_rt_generic.
           " Certificate might already be deleted
-      ENDTRY.
-    ENDIF.
-
-    " Clean up topic rule
-    IF av_topic_rule_name IS NOT INITIAL.
-      TRY.
-          ao_iot->deletetopicrule( iv_rulename = av_topic_rule_name ).
-        CATCH /aws1/cx_rt_generic.
-          " Rule might already be deleted
       ENDTRY.
     ENDIF.
 
@@ -216,23 +183,20 @@ CLASS ltc_awsex_cl_iot_actions IMPLEMENTATION.
     ENDIF.
 
     " Clean up IAM role
-    IF av_role_arn IS NOT INITIAL.
+    IF av_role_name IS NOT INITIAL.
       TRY.
-          " Extract role name from ARN
-          SPLIT av_role_arn AT '/' INTO TABLE DATA(lt_parts).
-          DATA(lv_role_name) = lt_parts[ lines( lt_parts ) ].
-
           " Delete inline policies first
-          TRY.
-              ao_iam->deleterolepolicy(
-                iv_rolename = lv_role_name
-                iv_policyname = 'IoTSNSPublish'
-              ).
-            CATCH /aws1/cx_rt_generic.
-          ENDTRY.
+          ao_iam->deleterolepolicy(
+            iv_rolename = av_role_name
+            iv_policyname = 'IoTComprehensivePolicy'
+          ).
+        CATCH /aws1/cx_rt_generic.
+          " Policy might not exist
+      ENDTRY.
 
+      TRY.
           " Delete role
-          ao_iam->deleterole( iv_rolename = lv_role_name ).
+          ao_iam->deleterole( iv_rolename = av_role_name ).
         CATCH /aws1/cx_rt_generic.
           " Role might already be deleted
       ENDTRY.
@@ -242,420 +206,610 @@ CLASS ltc_awsex_cl_iot_actions IMPLEMENTATION.
   METHOD create_thing.
     DATA(lv_test_thing) = |{ av_thing_name }-create|.
 
-    DATA(lo_result) = ao_iot_actions->create_thing( lv_test_thing ).
-
-    cl_abap_unit_assert=>assert_bound(
-      act = lo_result
-      msg = |Thing creation failed| ).
-
-    cl_abap_unit_assert=>assert_equals(
-      exp = lv_test_thing
-      act = lo_result->get_thingname( )
-      msg = |Thing name does not match| ).
-
-    " Cleanup
     TRY.
+        DATA(lo_result) = ao_iot_actions->create_thing( lv_test_thing ).
+
+        cl_abap_unit_assert=>assert_bound(
+          act = lo_result
+          msg = 'Thing creation failed - result is not bound' ).
+
+        cl_abap_unit_assert=>assert_equals(
+          exp = lv_test_thing
+          act = lo_result->get_thingname( )
+          msg = 'Thing name does not match expected value' ).
+
+        " Cleanup
         ao_iot->deletething( iv_thingname = lv_test_thing ).
-      CATCH /aws1/cx_rt_generic.
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
+        " Cleanup on error
+        TRY.
+            ao_iot->deletething( iv_thingname = lv_test_thing ).
+          CATCH /aws1/cx_rt_generic.
+        ENDTRY.
+        cl_abap_unit_assert=>fail(
+          msg = |create_thing test failed: { lo_ex->get_text( ) }|
+        ).
     ENDTRY.
   ENDMETHOD.
 
   METHOD list_things.
-    " Create a test thing first
+    " Create a test thing to ensure we have something to list
     DATA(lv_test_thing) = |{ av_thing_name }-list|.
-    ao_iot->creatething( iv_thingname = lv_test_thing ).
 
-    DATA(lo_result) = ao_iot_actions->list_things( ).
-
-    cl_abap_unit_assert=>assert_bound(
-      act = lo_result
-      msg = |List things failed| ).
-
-    DATA(lt_things) = lo_result->get_things( ).
-    cl_abap_unit_assert=>assert_not_initial(
-      act = lt_things
-      msg = |No things found| ).
-
-    " Cleanup
     TRY.
+        ao_iot->creatething( iv_thingname = lv_test_thing ).
+      CATCH /aws1/cx_iotresrcalrdyexistsex.
+        " Thing exists, continue
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_create_ex).
+        cl_abap_unit_assert=>fail(
+          msg = |Failed to create test thing: { lo_create_ex->get_text( ) }|
+        ).
+    ENDTRY.
+
+    TRY.
+        DATA(lo_result) = ao_iot_actions->list_things( ).
+
+        cl_abap_unit_assert=>assert_bound(
+          act = lo_result
+          msg = 'List things failed - result is not bound' ).
+
+        DATA(lt_things) = lo_result->get_things( ).
+        cl_abap_unit_assert=>assert_not_initial(
+          act = lt_things
+          msg = 'No things found in list' ).
+
+        " Cleanup
         ao_iot->deletething( iv_thingname = lv_test_thing ).
-      CATCH /aws1/cx_rt_generic.
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
+        " Cleanup on error
+        TRY.
+            ao_iot->deletething( iv_thingname = lv_test_thing ).
+          CATCH /aws1/cx_rt_generic.
+        ENDTRY.
+        cl_abap_unit_assert=>fail(
+          msg = |list_things test failed: { lo_ex->get_text( ) }|
+        ).
     ENDTRY.
   ENDMETHOD.
 
   METHOD create_keys_and_certificate.
-    DATA(lo_result) = ao_iot_actions->create_keys_and_certificate( ).
+    DATA lv_new_cert_id TYPE /aws1/iotcertificateid.
 
-    cl_abap_unit_assert=>assert_bound(
-      act = lo_result
-      msg = |Certificate creation failed| ).
-
-    cl_abap_unit_assert=>assert_not_initial(
-      act = lo_result->get_certificateid( )
-      msg = |Certificate ID not returned| ).
-
-    " Clean up the newly created certificate
     TRY.
-        DATA(lv_new_cert_id) = lo_result->get_certificateid( ).
+        DATA(lo_result) = ao_iot_actions->create_keys_and_certificate( ).
+
+        cl_abap_unit_assert=>assert_bound(
+          act = lo_result
+          msg = 'Certificate creation failed - result is not bound' ).
+
+        lv_new_cert_id = lo_result->get_certificateid( ).
+        cl_abap_unit_assert=>assert_not_initial(
+          act = lv_new_cert_id
+          msg = 'Certificate ID not returned' ).
+
+        " Cleanup - delete the newly created certificate
         ao_iot->updatecertificate(
           iv_certificateid = lv_new_cert_id
           iv_newstatus = 'INACTIVE'
         ).
         ao_iot->deletecertificate( iv_certificateid = lv_new_cert_id ).
-      CATCH /aws1/cx_rt_generic.
-        " Ignore cleanup errors
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
+        " Cleanup on error
+        IF lv_new_cert_id IS NOT INITIAL.
+          TRY.
+              ao_iot->updatecertificate(
+                iv_certificateid = lv_new_cert_id
+                iv_newstatus = 'INACTIVE'
+              ).
+              ao_iot->deletecertificate( iv_certificateid = lv_new_cert_id ).
+            CATCH /aws1/cx_rt_generic.
+          ENDTRY.
+        ENDIF.
+        cl_abap_unit_assert=>fail(
+          msg = |create_keys_and_certificate test failed: { lo_ex->get_text( ) }|
+        ).
     ENDTRY.
   ENDMETHOD.
 
   METHOD attach_thing_principal.
-    " Create thing for this test
     DATA(lv_test_thing) = |{ av_thing_name }-attach|.
-    
+
     TRY.
+        " Create thing for this test
         ao_iot->creatething( iv_thingname = lv_test_thing ).
       CATCH /aws1/cx_iotresrcalrdyexistsex.
         " Thing exists, continue
-      CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_create_ex).
         cl_abap_unit_assert=>fail(
-          msg = |Failed to create thing for attach test: { lo_ex->get_text( ) }|
+          msg = |Failed to create thing for attach test: { lo_create_ex->get_text( ) }|
         ).
     ENDTRY.
 
-    " Use base certificate from setup
-    DATA(lo_result) = ao_iot_actions->attach_thing_principal(
-      iv_thing_name = lv_test_thing
-      iv_principal = av_cert_arn
-    ).
-
-    cl_abap_unit_assert=>assert_bound(
-      act = lo_result
-      msg = |Attach thing principal failed| ).
-
-    " Cleanup
     TRY.
+        " Use base certificate from setup
+        DATA(lo_result) = ao_iot_actions->attach_thing_principal(
+          iv_thing_name = lv_test_thing
+          iv_principal = av_cert_arn
+        ).
+
+        cl_abap_unit_assert=>assert_bound(
+          act = lo_result
+          msg = 'Attach thing principal failed - result is not bound' ).
+
+        " Cleanup
         ao_iot->detachthingprincipal(
           iv_thingname = lv_test_thing
           iv_principal = av_cert_arn
         ).
         ao_iot->deletething( iv_thingname = lv_test_thing ).
-      CATCH /aws1/cx_rt_generic.
-        " Ignore cleanup errors
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
+        " Cleanup on error
+        TRY.
+            ao_iot->detachthingprincipal(
+              iv_thingname = lv_test_thing
+              iv_principal = av_cert_arn
+            ).
+          CATCH /aws1/cx_rt_generic.
+        ENDTRY.
+        TRY.
+            ao_iot->deletething( iv_thingname = lv_test_thing ).
+          CATCH /aws1/cx_rt_generic.
+        ENDTRY.
+        cl_abap_unit_assert=>fail(
+          msg = |attach_thing_principal test failed: { lo_ex->get_text( ) }|
+        ).
     ENDTRY.
   ENDMETHOD.
 
   METHOD describe_endpoint.
-    DATA(lv_endpoint) = ao_iot_actions->describe_endpoint( 'iot:Data-ATS' ).
+    TRY.
+        DATA(lv_endpoint) = ao_iot_actions->describe_endpoint( 'iot:Data-ATS' ).
 
-    cl_abap_unit_assert=>assert_not_initial(
-      act = lv_endpoint
-      msg = |Endpoint not returned| ).
+        cl_abap_unit_assert=>assert_not_initial(
+          act = lv_endpoint
+          msg = 'Endpoint not returned' ).
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
+        cl_abap_unit_assert=>fail(
+          msg = |describe_endpoint test failed: { lo_ex->get_text( ) }|
+        ).
+    ENDTRY.
   ENDMETHOD.
 
   METHOD list_certificates.
-    " Base certificate was created in setup, no need to create another
-    DATA(lo_result) = ao_iot_actions->list_certificates( ).
+    " Base certificate was created in setup
+    TRY.
+        DATA(lo_result) = ao_iot_actions->list_certificates( ).
 
-    cl_abap_unit_assert=>assert_bound(
-      act = lo_result
-      msg = |List certificates failed| ).
+        cl_abap_unit_assert=>assert_bound(
+          act = lo_result
+          msg = 'List certificates failed - result is not bound' ).
 
-    DATA(lt_certificates) = lo_result->get_certificates( ).
-    cl_abap_unit_assert=>assert_not_initial(
-      act = lt_certificates
-      msg = |No certificates found| ).
+        DATA(lt_certificates) = lo_result->get_certificates( ).
+        cl_abap_unit_assert=>assert_not_initial(
+          act = lt_certificates
+          msg = 'No certificates found' ).
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
+        cl_abap_unit_assert=>fail(
+          msg = |list_certificates test failed: { lo_ex->get_text( ) }|
+        ).
+    ENDTRY.
   ENDMETHOD.
 
   METHOD detach_thing_principal.
-    " Create thing and attach certificate from setup
     DATA(lv_test_thing) = |{ av_thing_name }-detach|.
-    
+
     TRY.
+        " Create thing for this test
         ao_iot->creatething( iv_thingname = lv_test_thing ).
       CATCH /aws1/cx_iotresrcalrdyexistsex.
         " Thing exists, continue
-      CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_create_ex).
         cl_abap_unit_assert=>fail(
-          msg = |Failed to create thing for detach test: { lo_ex->get_text( ) }|
+          msg = |Failed to create thing for detach test: { lo_create_ex->get_text( ) }|
         ).
     ENDTRY.
 
-    " Attach the base certificate
     TRY.
+        " Attach the base certificate first
         ao_iot->attachthingprincipal(
           iv_thingname = lv_test_thing
           iv_principal = av_cert_arn
         ).
-      CATCH /aws1/cx_rt_generic INTO DATA(lo_attach_ex).
-        cl_abap_unit_assert=>fail(
-          msg = |Failed to attach principal: { lo_attach_ex->get_text( ) }|
+
+        " Now test detaching
+        DATA(lo_result) = ao_iot_actions->detach_thing_principal(
+          iv_thing_name = lv_test_thing
+          iv_principal = av_cert_arn
         ).
-    ENDTRY.
 
-    " Now test detaching
-    DATA(lo_result) = ao_iot_actions->detach_thing_principal(
-      iv_thing_name = lv_test_thing
-      iv_principal = av_cert_arn
-    ).
+        cl_abap_unit_assert=>assert_bound(
+          act = lo_result
+          msg = 'Detach thing principal failed - result is not bound' ).
 
-    cl_abap_unit_assert=>assert_bound(
-      act = lo_result
-      msg = |Detach thing principal failed| ).
-
-    " Cleanup
-    TRY.
+        " Cleanup
         ao_iot->deletething( iv_thingname = lv_test_thing ).
-      CATCH /aws1/cx_rt_generic.
-        " Ignore cleanup errors
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
+        " Cleanup on error
+        TRY.
+            ao_iot->deletething( iv_thingname = lv_test_thing ).
+          CATCH /aws1/cx_rt_generic.
+        ENDTRY.
+        cl_abap_unit_assert=>fail(
+          msg = |detach_thing_principal test failed: { lo_ex->get_text( ) }|
+        ).
     ENDTRY.
   ENDMETHOD.
 
   METHOD delete_certificate.
-    " Create a new certificate for deletion
-    DATA(lo_cert) = ao_iot->createkeysandcertificate( iv_setasactive = abap_true ).
-    DATA(lv_cert_id) = lo_cert->get_certificateid( ).
+    " Create a new certificate specifically for deletion test
+    DATA lv_cert_id TYPE /aws1/iotcertificateid.
 
-    " Wait a moment for certificate to be available
-    WAIT UP TO 2 SECONDS.
-
-    ao_iot_actions->delete_certificate( lv_cert_id ).
-
-    " Verify certificate is deleted
-    DATA(lv_deleted) = abap_false.
     TRY.
-        ao_iot->describecertificate( iv_certificateid = lv_cert_id ).
-      CATCH /aws1/cx_iotresourcenotfoundex.
-        lv_deleted = abap_true.
-    ENDTRY.
+        DATA(lo_cert) = ao_iot->createkeysandcertificate( iv_setasactive = abap_true ).
+        lv_cert_id = lo_cert->get_certificateid( ).
 
-    cl_abap_unit_assert=>assert_true(
-      act = lv_deleted
-      msg = |Certificate was not deleted| ).
+        " Wait for certificate to be ready
+        WAIT UP TO 3 SECONDS.
+
+        " Test deleting the certificate
+        ao_iot_actions->delete_certificate( lv_cert_id ).
+
+        " Verify certificate is deleted
+        DATA(lv_deleted) = abap_false.
+        TRY.
+            ao_iot->describecertificate( iv_certificateid = lv_cert_id ).
+          CATCH /aws1/cx_iotresourcenotfoundex.
+            lv_deleted = abap_true.
+        ENDTRY.
+
+        cl_abap_unit_assert=>assert_true(
+          act = lv_deleted
+          msg = 'Certificate was not deleted' ).
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
+        " Cleanup on error
+        IF lv_cert_id IS NOT INITIAL.
+          TRY.
+              ao_iot->updatecertificate(
+                iv_certificateid = lv_cert_id
+                iv_newstatus = 'INACTIVE'
+              ).
+              ao_iot->deletecertificate( iv_certificateid = lv_cert_id ).
+            CATCH /aws1/cx_rt_generic.
+          ENDTRY.
+        ENDIF.
+        cl_abap_unit_assert=>fail(
+          msg = |delete_certificate test failed: { lo_ex->get_text( ) }|
+        ).
+    ENDTRY.
   ENDMETHOD.
 
   METHOD create_topic_rule.
-    DATA(lv_test_rule) = |{ av_topic_rule_name }_create|.
+    DATA(lv_test_rule) = |{ av_topic_rule_name }_cre|.
 
-    ao_iot_actions->create_topic_rule(
-      iv_rule_name = lv_test_rule
-      iv_topic = 'test/topic'
-      iv_sns_action_arn = av_sns_topic_arn
-      iv_role_arn = av_role_arn
-    ).
-
-    " Verify rule was created
-    DATA(lo_rule) = ao_iot->gettopicrule( iv_rulename = lv_test_rule ).
-    cl_abap_unit_assert=>assert_bound(
-      act = lo_rule
-      msg = |Topic rule was not created| ).
-
-    " Cleanup
     TRY.
+        ao_iot_actions->create_topic_rule(
+          iv_rule_name = lv_test_rule
+          iv_topic = 'test/topic'
+          iv_sns_action_arn = av_sns_topic_arn
+          iv_role_arn = av_role_arn
+        ).
+
+        " Verify rule was created
+        DATA(lo_rule) = ao_iot->gettopicrule( iv_rulename = lv_test_rule ).
+        cl_abap_unit_assert=>assert_bound(
+          act = lo_rule
+          msg = 'Topic rule was not created' ).
+
+        " Cleanup
         ao_iot->deletetopicrule( iv_rulename = lv_test_rule ).
-      CATCH /aws1/cx_rt_generic.
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
+        " Cleanup on error
+        TRY.
+            ao_iot->deletetopicrule( iv_rulename = lv_test_rule ).
+          CATCH /aws1/cx_rt_generic.
+        ENDTRY.
+        cl_abap_unit_assert=>fail(
+          msg = |create_topic_rule test failed: { lo_ex->get_text( ) }|
+        ).
     ENDTRY.
   ENDMETHOD.
 
   METHOD list_topic_rules.
     " Create a test rule first
-    DATA(lv_test_rule) = |{ av_topic_rule_name }_list|.
-    DATA(lt_actions) = VALUE /aws1/cl_iotaction=>tt_actionlist(
-      ( NEW /aws1/cl_iotaction(
-          io_sns = NEW /aws1/cl_iotsnsaction(
-            iv_targetarn = av_sns_topic_arn
-            iv_rolearn = av_role_arn
-          )
-        )
-      )
-    ).
-    DATA(lo_payload) = NEW /aws1/cl_iottopicrulepayload(
-      iv_sql = |SELECT * FROM 'test/topic'|
-      it_actions = lt_actions
-    ).
-    ao_iot->createtopicrule(
-      iv_rulename = lv_test_rule
-      io_topicrulepayload = lo_payload
-    ).
+    DATA(lv_test_rule) = |{ av_topic_rule_name }_lst|.
 
-    DATA(lo_result) = ao_iot_actions->list_topic_rules( ).
-
-    cl_abap_unit_assert=>assert_bound(
-      act = lo_result
-      msg = |List topic rules failed| ).
-
-    DATA(lt_rules) = lo_result->get_rules( ).
-    cl_abap_unit_assert=>assert_not_initial(
-      act = lt_rules
-      msg = |No topic rules found| ).
-
-    " Cleanup
     TRY.
+        DATA(lt_actions) = VALUE /aws1/cl_iotaction=>tt_actionlist(
+          ( NEW /aws1/cl_iotaction(
+              io_sns = NEW /aws1/cl_iotsnsaction(
+                iv_targetarn = av_sns_topic_arn
+                iv_rolearn = av_role_arn
+              )
+            )
+          )
+        ).
+        DATA(lo_payload) = NEW /aws1/cl_iottopicrulepayload(
+          iv_sql = |SELECT * FROM 'test/topic'|
+          it_actions = lt_actions
+        ).
+        ao_iot->createtopicrule(
+          iv_rulename = lv_test_rule
+          io_topicrulepayload = lo_payload
+        ).
+      CATCH /aws1/cx_iotresrcalrdyexistsex.
+        " Rule exists, continue
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_create_ex).
+        cl_abap_unit_assert=>fail(
+          msg = |Failed to create rule for list test: { lo_create_ex->get_text( ) }|
+        ).
+    ENDTRY.
+
+    TRY.
+        DATA(lo_result) = ao_iot_actions->list_topic_rules( ).
+
+        cl_abap_unit_assert=>assert_bound(
+          act = lo_result
+          msg = 'List topic rules failed - result is not bound' ).
+
+        DATA(lt_rules) = lo_result->get_rules( ).
+        cl_abap_unit_assert=>assert_not_initial(
+          act = lt_rules
+          msg = 'No topic rules found' ).
+
+        " Cleanup
         ao_iot->deletetopicrule( iv_rulename = lv_test_rule ).
-      CATCH /aws1/cx_rt_generic.
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
+        " Cleanup on error
+        TRY.
+            ao_iot->deletetopicrule( iv_rulename = lv_test_rule ).
+          CATCH /aws1/cx_rt_generic.
+        ENDTRY.
+        cl_abap_unit_assert=>fail(
+          msg = |list_topic_rules test failed: { lo_ex->get_text( ) }|
+        ).
     ENDTRY.
   ENDMETHOD.
 
   METHOD search_index.
     " Indexing was enabled in setup, create a test thing
     DATA(lv_test_thing) = |{ av_thing_name }-search|.
-    
+
     TRY.
         ao_iot->creatething( iv_thingname = lv_test_thing ).
         " Wait for thing to be indexed
         WAIT UP TO 15 SECONDS.
       CATCH /aws1/cx_iotresrcalrdyexistsex.
         " Thing exists, continue
-      CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_create_ex).
         cl_abap_unit_assert=>fail(
-          msg = |Failed to create thing for search test: { lo_ex->get_text( ) }|
+          msg = |Failed to create thing for search test: { lo_create_ex->get_text( ) }|
         ).
     ENDTRY.
 
-    " Search for things - use wildcard to ensure results
-    DATA(lo_result) = ao_iot_actions->search_index( 'thingName:*' ).
-
-    cl_abap_unit_assert=>assert_bound(
-      act = lo_result
-      msg = |Search index failed| ).
-
-    " Cleanup
     TRY.
+        " Search for things using wildcard
+        DATA(lo_result) = ao_iot_actions->search_index( 'thingName:*' ).
+
+        cl_abap_unit_assert=>assert_bound(
+          act = lo_result
+          msg = 'Search index failed - result is not bound' ).
+
+        " Cleanup
         ao_iot->deletething( iv_thingname = lv_test_thing ).
-      CATCH /aws1/cx_rt_generic.
-        " Ignore cleanup errors
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
+        " Cleanup on error
+        TRY.
+            ao_iot->deletething( iv_thingname = lv_test_thing ).
+          CATCH /aws1/cx_rt_generic.
+        ENDTRY.
+        cl_abap_unit_assert=>fail(
+          msg = |search_index test failed: { lo_ex->get_text( ) }|
+        ).
     ENDTRY.
   ENDMETHOD.
 
   METHOD update_indexing_configuration.
-    ao_iot_actions->update_indexing_configuration( ).
+    TRY.
+        ao_iot_actions->update_indexing_configuration( ).
 
-    " Verify indexing is enabled
-    DATA(lo_config) = ao_iot->getindexingconfiguration( ).
-    cl_abap_unit_assert=>assert_equals(
-      exp = 'REGISTRY'
-      act = lo_config->get_thingindexingconfiguration( )->get_thingindexingmode( )
-      msg = |Indexing configuration was not updated| ).
+        " Verify indexing is enabled
+        DATA(lo_config) = ao_iot->getindexingconfiguration( ).
+        cl_abap_unit_assert=>assert_equals(
+          exp = 'REGISTRY'
+          act = lo_config->get_thingindexingconfiguration( )->get_thingindexingmode( )
+          msg = 'Indexing configuration was not updated' ).
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
+        cl_abap_unit_assert=>fail(
+          msg = |update_indexing_configuration test failed: { lo_ex->get_text( ) }|
+        ).
+    ENDTRY.
   ENDMETHOD.
 
   METHOD delete_thing.
-    " Create a thing to delete
+    " Create a thing specifically for deletion test
     DATA(lv_test_thing) = |{ av_thing_name }-delete|.
-    ao_iot->creatething( iv_thingname = lv_test_thing ).
 
-    ao_iot_actions->delete_thing( lv_test_thing ).
-
-    " Verify thing is deleted
-    DATA(lv_deleted) = abap_false.
     TRY.
-        ao_iot->describething( iv_thingname = lv_test_thing ).
-      CATCH /aws1/cx_iotresourcenotfoundex.
-        lv_deleted = abap_true.
+        ao_iot->creatething( iv_thingname = lv_test_thing ).
+      CATCH /aws1/cx_iotresrcalrdyexistsex.
+        " Thing exists, continue
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_create_ex).
+        cl_abap_unit_assert=>fail(
+          msg = |Failed to create thing for delete test: { lo_create_ex->get_text( ) }|
+        ).
     ENDTRY.
 
-    cl_abap_unit_assert=>assert_true(
-      act = lv_deleted
-      msg = |Thing was not deleted| ).
+    TRY.
+        ao_iot_actions->delete_thing( lv_test_thing ).
+
+        " Verify thing is deleted
+        DATA(lv_deleted) = abap_false.
+        TRY.
+            ao_iot->describething( iv_thingname = lv_test_thing ).
+          CATCH /aws1/cx_iotresourcenotfoundex.
+            lv_deleted = abap_true.
+        ENDTRY.
+
+        cl_abap_unit_assert=>assert_true(
+          act = lv_deleted
+          msg = 'Thing was not deleted' ).
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
+        cl_abap_unit_assert=>fail(
+          msg = |delete_thing test failed: { lo_ex->get_text( ) }|
+        ).
+    ENDTRY.
   ENDMETHOD.
 
   METHOD delete_topic_rule.
-    " Create a rule to delete
-    DATA(lv_test_rule) = |{ av_topic_rule_name }_delete|.
-    DATA(lt_actions) = VALUE /aws1/cl_iotaction=>tt_actionlist(
-      ( NEW /aws1/cl_iotaction(
-          io_sns = NEW /aws1/cl_iotsnsaction(
-            iv_targetarn = av_sns_topic_arn
-            iv_rolearn = av_role_arn
-          )
-        )
-      )
-    ).
-    DATA(lo_payload) = NEW /aws1/cl_iottopicrulepayload(
-      iv_sql = |SELECT * FROM 'test/topic'|
-      it_actions = lt_actions
-    ).
-    ao_iot->createtopicrule(
-      iv_rulename = lv_test_rule
-      io_topicrulepayload = lo_payload
-    ).
+    " Create a rule specifically for deletion test
+    DATA(lv_test_rule) = |{ av_topic_rule_name }_del|.
 
-    ao_iot_actions->delete_topic_rule( lv_test_rule ).
-
-    " Verify rule is deleted
-    DATA(lv_deleted) = abap_false.
     TRY.
-        ao_iot->gettopicrule( iv_rulename = lv_test_rule ).
-      CATCH /aws1/cx_iotresourcenotfoundex.
-        lv_deleted = abap_true.
+        DATA(lt_actions) = VALUE /aws1/cl_iotaction=>tt_actionlist(
+          ( NEW /aws1/cl_iotaction(
+              io_sns = NEW /aws1/cl_iotsnsaction(
+                iv_targetarn = av_sns_topic_arn
+                iv_rolearn = av_role_arn
+              )
+            )
+          )
+        ).
+        DATA(lo_payload) = NEW /aws1/cl_iottopicrulepayload(
+          iv_sql = |SELECT * FROM 'test/topic'|
+          it_actions = lt_actions
+        ).
+        ao_iot->createtopicrule(
+          iv_rulename = lv_test_rule
+          io_topicrulepayload = lo_payload
+        ).
+      CATCH /aws1/cx_iotresrcalrdyexistsex.
+        " Rule exists, continue
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_create_ex).
+        cl_abap_unit_assert=>fail(
+          msg = |Failed to create rule for delete test: { lo_create_ex->get_text( ) }|
+        ).
     ENDTRY.
 
-    cl_abap_unit_assert=>assert_true(
-      act = lv_deleted
-      msg = |Topic rule was not deleted| ).
+    TRY.
+        ao_iot_actions->delete_topic_rule( lv_test_rule ).
+
+        " Verify rule is deleted
+        DATA(lv_deleted) = abap_false.
+        TRY.
+            ao_iot->gettopicrule( iv_rulename = lv_test_rule ).
+          CATCH /aws1/cx_iotresourcenotfoundex.
+            lv_deleted = abap_true.
+        ENDTRY.
+
+        cl_abap_unit_assert=>assert_true(
+          act = lv_deleted
+          msg = 'Topic rule was not deleted' ).
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
+        cl_abap_unit_assert=>fail(
+          msg = |delete_topic_rule test failed: { lo_ex->get_text( ) }|
+        ).
+    ENDTRY.
   ENDMETHOD.
 
   METHOD update_thing_shadow.
-    " Create a thing first
+    " Create a thing for shadow testing
     DATA(lv_test_thing) = |{ av_thing_name }-shadow|.
+
     TRY.
         ao_iot->creatething( iv_thingname = lv_test_thing ).
         " Wait for thing to be ready
         WAIT UP TO 5 SECONDS.
       CATCH /aws1/cx_iotresrcalrdyexistsex.
+        " Thing exists, continue
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_create_ex).
+        cl_abap_unit_assert=>fail(
+          msg = |Failed to create thing for shadow test: { lo_create_ex->get_text( ) }|
+        ).
     ENDTRY.
 
-    DATA(lv_shadow_state) = |{ '{' }"state":{ '{' }"desired":{ '{' }"color":"red"{ '}' }{ '}' }{ '}' }|.
-    DATA(lo_result) = ao_iot_actions->update_thing_shadow(
-      iv_thing_name = lv_test_thing
-      iv_shadow_state = lv_shadow_state
-    ).
-
-    cl_abap_unit_assert=>assert_bound(
-      act = lo_result
-      msg = |Update thing shadow failed| ).
-
-    " Cleanup
     TRY.
+        DATA(lv_shadow_state) = '{"state":{"desired":{"color":"red"}}}'.
+        DATA(lo_result) = ao_iot_actions->update_thing_shadow(
+          iv_thing_name = lv_test_thing
+          iv_shadow_state = lv_shadow_state
+        ).
+
+        cl_abap_unit_assert=>assert_bound(
+          act = lo_result
+          msg = 'Update thing shadow failed - result is not bound' ).
+
+        " Cleanup
         ao_iop->deletethingshadow( iv_thingname = lv_test_thing ).
         ao_iot->deletething( iv_thingname = lv_test_thing ).
-      CATCH /aws1/cx_rt_generic.
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
+        " Cleanup on error
+        TRY.
+            ao_iop->deletethingshadow( iv_thingname = lv_test_thing ).
+          CATCH /aws1/cx_rt_generic.
+        ENDTRY.
+        TRY.
+            ao_iot->deletething( iv_thingname = lv_test_thing ).
+          CATCH /aws1/cx_rt_generic.
+        ENDTRY.
+        cl_abap_unit_assert=>fail(
+          msg = |update_thing_shadow test failed: { lo_ex->get_text( ) }|
+        ).
     ENDTRY.
   ENDMETHOD.
 
   METHOD get_thing_shadow.
     " Create a thing and update its shadow first
-    DATA(lv_test_thing) = |{ av_thing_name }-getshadow|.
+    DATA(lv_test_thing) = |{ av_thing_name }-getshdw|.
+
     TRY.
         ao_iot->creatething( iv_thingname = lv_test_thing ).
         " Wait for thing to be ready
         WAIT UP TO 5 SECONDS.
       CATCH /aws1/cx_iotresrcalrdyexistsex.
+        " Thing exists, continue
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_create_ex).
+        cl_abap_unit_assert=>fail(
+          msg = |Failed to create thing for get shadow test: { lo_create_ex->get_text( ) }|
+        ).
     ENDTRY.
 
-    DATA(lv_shadow_state) = |{ '{' }"state":{ '{' }"desired":{ '{' }"color":"blue"{ '}' }{ '}' }{ '}' }|.
     TRY.
+        " Create shadow first
+        DATA(lv_shadow_state) = '{"state":{"desired":{"color":"blue"}}}'.
         ao_iop->updatethingshadow(
           iv_thingname = lv_test_thing
           iv_payload = lv_shadow_state
         ).
         " Wait for shadow to be updated
-        WAIT UP TO 2 SECONDS.
-      CATCH /aws1/cx_rt_generic.
-    ENDTRY.
+        WAIT UP TO 3 SECONDS.
 
-    DATA(lo_result) = ao_iot_actions->get_thing_shadow( lv_test_thing ).
+        " Now test getting the shadow
+        DATA(lo_result) = ao_iot_actions->get_thing_shadow( lv_test_thing ).
 
-    cl_abap_unit_assert=>assert_bound(
-      act = lo_result
-      msg = |Get thing shadow failed| ).
+        cl_abap_unit_assert=>assert_bound(
+          act = lo_result
+          msg = 'Get thing shadow failed - result is not bound' ).
 
-    cl_abap_unit_assert=>assert_not_initial(
-      act = lo_result->get_payload( )
-      msg = |Shadow payload is empty| ).
+        cl_abap_unit_assert=>assert_not_initial(
+          act = lo_result->get_payload( )
+          msg = 'Shadow payload is empty' ).
 
-    " Cleanup
-    TRY.
+        " Cleanup
         ao_iop->deletethingshadow( iv_thingname = lv_test_thing ).
         ao_iot->deletething( iv_thingname = lv_test_thing ).
-      CATCH /aws1/cx_rt_generic.
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_ex).
+        " Cleanup on error
+        TRY.
+            ao_iop->deletethingshadow( iv_thingname = lv_test_thing ).
+          CATCH /aws1/cx_rt_generic.
+        ENDTRY.
+        TRY.
+            ao_iot->deletething( iv_thingname = lv_test_thing ).
+          CATCH /aws1/cx_rt_generic.
+        ENDTRY.
+        cl_abap_unit_assert=>fail(
+          msg = |get_thing_shadow test failed: { lo_ex->get_text( ) }|
+        ).
     ENDTRY.
   ENDMETHOD.
 
