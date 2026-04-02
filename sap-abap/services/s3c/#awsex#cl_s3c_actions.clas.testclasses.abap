@@ -426,7 +426,11 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
             iv_priority              = 10
             iv_rolearn               = gv_role_arn
             iv_description           = 'Batch job for tagging objects'
-            iv_confirmationrequired  = abap_true ).
+            iv_confirmationrequired  = abap_false ).
+
+          IF lo_result IS NOT BOUND.
+            cl_abap_unit_assert=>fail( msg = 'CreateJob returned NULL in ensure_job_exists' ).
+          ENDIF.
 
           gv_job_id = lo_result->get_jobid( ).
         CATCH /aws1/cx_rt_generic INTO lo_ex.
@@ -492,9 +496,21 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
           iv_priority              = 10
           iv_rolearn               = gv_role_arn
           iv_description           = 'Batch job for tagging objects'
-          iv_confirmationrequired  = abap_true ).
+          iv_confirmationrequired  = abap_false ).
+
+        IF lo_result IS NOT BOUND.
+          cl_abap_unit_assert=>fail( msg = 'CreateJob returned NULL but no exception was raised' ).
+        ENDIF.
+      CATCH /aws1/cx_s3cbadrequestex INTO DATA(lo_bad_ex).
+        cl_abap_unit_assert=>fail( msg = |BadRequestException: { lo_bad_ex->get_text( ) }| ).
+      CATCH /aws1/cx_s3cidempotencyex INTO DATA(lo_idemp_ex).
+        cl_abap_unit_assert=>fail( msg = |IdempotencyException: { lo_idemp_ex->get_text( ) }| ).
+      CATCH /aws1/cx_s3cinternalserviceex INTO DATA(lo_internal_ex).
+        cl_abap_unit_assert=>fail( msg = |InternalServiceException: { lo_internal_ex->get_text( ) }| ).
+      CATCH /aws1/cx_s3ctoomanyrequestsex INTO DATA(lo_toomany_ex).
+        cl_abap_unit_assert=>fail( msg = |TooManyRequestsException: { lo_toomany_ex->get_text( ) }| ).
       CATCH /aws1/cx_rt_generic INTO lo_ex.
-        cl_abap_unit_assert=>fail( msg = |Failed to create job: { lo_ex->get_text( ) }| ).
+        cl_abap_unit_assert=>fail( msg = |Generic exception: { lo_ex->get_text( ) }| ).
     ENDTRY.
 
     cl_abap_unit_assert=>assert_bound(
