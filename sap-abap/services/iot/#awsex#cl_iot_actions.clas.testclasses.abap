@@ -152,7 +152,7 @@ CLASS ltc_awsex_cl_iot_actions IMPLEMENTATION.
           iv_thingindexingmode = 'REGISTRY'
         ).
         ao_iot->updateindexingconfiguration(
-          io_thingindexingconfiguration = lo_thing_indexing_config
+          io_thingindexingconf = lo_thing_indexing_config
         ).
         " Wait for indexing to be enabled
         WAIT UP TO 10 SECONDS.
@@ -533,7 +533,7 @@ CLASS ltc_awsex_cl_iot_actions IMPLEMENTATION.
     DATA(lo_config) = ao_iot->getindexingconfiguration( ).
     cl_abap_unit_assert=>assert_equals(
       exp = 'REGISTRY'
-      act = lo_config->get_thingindexingconfiguration( )->get_thingindexingmode( )
+      act = lo_config->get_thingindexingconf( )->get_thingindexingmode( )
       msg = |Indexing configuration was not updated| ).
   ENDMETHOD.
 
@@ -604,9 +604,11 @@ CLASS ltc_awsex_cl_iot_actions IMPLEMENTATION.
     ENDTRY.
 
     DATA(lv_shadow_state) = '{"state":{"desired":{"color":"red"}}}'.
+    " Convert string to xstring for the API
+    DATA(lv_shadow_xstring) = /awsex/cl_utils=>string_to_xstring( lv_shadow_state ).
     DATA(lo_result) = ao_iot_actions->update_thing_shadow(
       iv_thing_name = lv_test_thing
-      iv_shadow_state = lv_shadow_state
+      iv_shadow_state = lv_shadow_xstring
     ).
 
     cl_abap_unit_assert=>assert_bound(
