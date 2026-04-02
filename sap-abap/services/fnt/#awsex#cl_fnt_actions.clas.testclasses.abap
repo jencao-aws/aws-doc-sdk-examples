@@ -63,21 +63,20 @@ CLASS ltc_awsex_cl_fnt_actions IMPLEMENTATION.
 
         " Upload a test file to the bucket
         DATA(lv_test_content) = '<html><body><h1>CloudFront Test</h1></body></html>'.
+        DATA lv_body TYPE xstring.
+        lv_body = cl_abap_codepage=>convert_to( source = lv_test_content ).
         ao_s3->putobject(
           iv_bucket = av_bucket_name
           iv_key = 'index.html'
-          iv_body = cl_abap_codepage=>convert_to( lv_test_content ) ).
-
-        MESSAGE 'S3 bucket created and tagged: ' && av_bucket_name TYPE 'I'.
+          iv_body = lv_body ).
 
         " Step 2: Create Origin Access Control
         MESSAGE 'Creating Origin Access Control...' TYPE 'I'.
         DATA(lo_oac_config) = NEW /aws1/cl_fntoriginaccctlconfig(
-          iv_name = |oac-{ lv_uuid }|
-          iv_description = 'OAC for CloudFront test'
+          iv_name = |oac-{ av_bucket_name }|
           iv_signingprotocol = 'sigv4'
           iv_signingbehavior = 'always'
-          iv_originaccctlorigintype = 's3'
+          iv_originaccessctlorigintype = 's3'
         ).
 
         DATA(lo_oac_result) = ao_fnt->createoriginaccesscontrol(
@@ -256,12 +255,21 @@ CLASS ltc_awsex_cl_fnt_actions IMPLEMENTATION.
     MESSAGE 'Please manually delete these resources after disabling the distribution.' TYPE 'I'.
 
     " Do not clean up resources - they are tagged for manual cleanup
-    " To clean up manually:
-    " 1. Disable the CloudFront distribution
-    " 2. Wait for it to be deployed (15-30 minutes)
-    " 3. Delete the distribution
-    " 4. Delete the Origin Access Control
-    " 5. Delete the S3 bucket and its contents
+    " Uncomment the following to enable cleanup (not recommended for CI/CD)
+    " IF av_distribution_id IS NOT INITIAL.
+    "   TRY.
+    "     " Disable and delete distribution
+    "     DATA(lo_config) = ao_fnt->getdistributionconfig( iv_id = av_distribution_id ).
+    "     DATA(lo_dist_config) = lo_config->get_distributionconfig( ).
+    "     lo_dist_config->set_enabled( abap_false ).
+    "     ao_fnt->updatedistribution(
+    "       iv_id = av_distribution_id
+    "       io_distributionconfig = lo_dist_config
+    "       iv_ifmatch = lo_config->get_etag( ) ).
+    "     " Wait and delete...
+    "   CATCH /aws1/cx_rt_generic.
+    "   ENDTRY.
+    " ENDIF.
   ENDMETHOD.
 
   METHOD list_distributions.
