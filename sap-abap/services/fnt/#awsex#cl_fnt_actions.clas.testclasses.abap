@@ -352,10 +352,28 @@ CLASS ltc_awsex_cl_fnt_actions IMPLEMENTATION.
       msg = 'Distribution comment was not updated correctly' ).
 
     " Restore original comment for cleanup
-    lo_verify_config->set_comment( av_original_comment ).
+    DATA(lo_restore_config) = NEW /aws1/cl_fntdistributionconfig(
+      iv_callerreference = lo_verify_config->get_callerreference( )
+      io_aliases = lo_verify_config->get_aliases( )
+      iv_defaultrootobject = lo_verify_config->get_defaultrootobject( )
+      io_origins = lo_verify_config->get_origins( )
+      io_origingroups = lo_verify_config->get_origingroups( )
+      io_defaultcachebehavior = lo_verify_config->get_defaultcachebehavior( )
+      io_cachebehaviors = lo_verify_config->get_cachebehaviors( )
+      io_customerrorresponses = lo_verify_config->get_customerrorresponses( )
+      iv_comment = av_original_comment
+      io_logging = lo_verify_config->get_logging( )
+      iv_priceclass = lo_verify_config->get_priceclass( )
+      iv_enabled = lo_verify_config->get_enabled( )
+      io_viewercertificate = lo_verify_config->get_viewercertificate( )
+      io_restrictions = lo_verify_config->get_restrictions( )
+      iv_webaclid = lo_verify_config->get_webaclid( )
+      iv_httpversion = lo_verify_config->get_httpversion( )
+      iv_isipv6enabled = lo_verify_config->get_isipv6enabled( )
+    ).
     ao_fnt->updatedistribution(
       iv_id = av_distribution_id
-      io_distributionconfig = lo_verify_config
+      io_distributionconfig = lo_restore_config
       iv_ifmatch = lo_verify_result->get_etag( ) ).
   ENDMETHOD.
 
