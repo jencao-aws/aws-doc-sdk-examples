@@ -58,9 +58,12 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
         DATA(lo_caller_identity) = ao_sts->getcalleridentity( ).
         av_account_id = lo_caller_identity->get_account( ).
 
-        " Create test bucket with unique name
+        " Create test bucket with unique name (S3 bucket names must be lowercase)
         DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
-        av_bucket_name = |sap-s3c-{ lv_uuid }|.
+        " Convert to lowercase and ensure it's valid for S3
+        DATA lv_uuid_lower TYPE string.
+        lv_uuid_lower = to_lower( lv_uuid ).
+        av_bucket_name = |sap-s3c-{ lv_uuid_lower }|.
         
         " Create bucket using utility function
         /awsex/cl_utils=>create_bucket(
