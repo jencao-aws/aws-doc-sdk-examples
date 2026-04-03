@@ -46,170 +46,192 @@ ENDCLASS.
 CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
 
   METHOD class_setup.
-    ao_session = /aws1/cl_rt_session_aws=>create( cv_pfl ).
-    ao_s3 = /aws1/cl_s3_factory=>create( ao_session ).
-    ao_s3c = /aws1/cl_s3c_factory=>create( ao_session ).
-    ao_iam = /aws1/cl_iam_factory=>create( ao_session ).
-    ao_sts = /aws1/cl_sts_factory=>create( ao_session ).
-    ao_s3c_actions = NEW /awsex/cl_s3c_actions( ).
-
-    " Get account ID
-    DATA(lo_caller_identity) = ao_sts->getcalleridentity( ).
-    av_account_id = lo_caller_identity->get_account( ).
-
-    " Create test bucket
-    av_bucket_name = |sap-abap-s3c-demo-{ av_account_id }|.
-    
-    " Check if bucket exists, if not create it
-    DATA lv_bucket_exists TYPE abap_bool VALUE abap_false.
     TRY.
-        ao_s3->headbucket( iv_bucket = av_bucket_name ).
-        lv_bucket_exists = abap_true.
-      CATCH /aws1/cx_s3_nosuchbucket.
-        lv_bucket_exists = abap_false.
+        ao_session = /aws1/cl_rt_session_aws=>create( cv_pfl ).
+        ao_s3 = /aws1/cl_s3_factory=>create( ao_session ).
+        ao_s3c = /aws1/cl_s3c_factory=>create( ao_session ).
+        ao_iam = /aws1/cl_iam_factory=>create( ao_session ).
+        ao_sts = /aws1/cl_sts_factory=>create( ao_session ).
+        ao_s3c_actions = NEW /awsex/cl_s3c_actions( ).
+
+        " Get account ID
+        DATA(lo_caller_identity) = ao_sts->getcalleridentity( ).
+        av_account_id = lo_caller_identity->get_account( ).
+
+        " Create test bucket
+        av_bucket_name = |sap-abap-s3c-demo-{ av_account_id }|.
+        
+        " Check if bucket exists, if not create it
+        DATA lv_bucket_exists TYPE abap_bool VALUE abap_false.
+        TRY.
+            ao_s3->headbucket( iv_bucket = av_bucket_name ).
+            lv_bucket_exists = abap_true.
+          CATCH /aws1/cx_s3_nosuchbucket.
+            lv_bucket_exists = abap_false.
+          CATCH /aws1/cx_s3_clientexc INTO DATA(lo_s3_ex).
+            " If it's a 404, bucket doesn't exist
+            IF lo_s3_ex->av_http_code = 404.
+              lv_bucket_exists = abap_false.
+            ELSE.
+              RAISE EXCEPTION lo_s3_ex.
+            ENDIF.
+        ENDTRY.
+
+        IF lv_bucket_exists = abap_false.
+          /awsex/cl_utils=>create_bucket(
+            iv_bucket = av_bucket_name
+            io_s3 = ao_s3
+            io_session = ao_session ).
+        ENDIF.
+
+        " Tag bucket for cleanup
+        DATA lt_s3_tags TYPE /aws1/cl_s3_tag=>tt_tagset.
+        APPEND NEW /aws1/cl_s3_tag( iv_key = 'convert_test' iv_value = 'true' ) TO lt_s3_tags.
+        ao_s3->putbuckettagging(
+          iv_bucket = av_bucket_name
+          io_tagging = NEW /aws1/cl_s3_tagging( it_tagset = lt_s3_tags ) ).
+      CATCH /aws1/cx_s3_clientexc INTO DATA(lo_client_ex).
+        cl_abap_unit_assert=>fail(
+          msg = |S3 Client Exception during setup: { lo_client_ex->if_message~get_text( ) }| ).
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_generic_ex).
+        cl_abap_unit_assert=>fail(
+          msg = |Generic Exception during setup: { lo_generic_ex->if_message~get_text( ) }| ).
     ENDTRY.
 
-    IF lv_bucket_exists = abap_false.
-      /awsex/cl_utils=>create_bucket(
-        iv_bucket = av_bucket_name
-        io_s3 = ao_s3
-        io_session = ao_session ).
-    ENDIF.
+        " Create IAM role for S3 Batch Operations with unique name
+        DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
+        DATA(lv_role_name) = |sap-s3c-role-{ lv_uuid }|.
+        DATA(lv_policy_name) = |sap-s3c-pol-{ lv_uuid }|.
+        
+        DATA(lv_trust_policy) = '{' &&
+          '"Version":"2012-10-17",' &&
+          '"Statement":[{' &&
+            '"Effect":"Allow",' &&
+            '"Principal":{"Service":"batchoperations.s3.amazonaws.com"},' &&
+            '"Action":"sts:AssumeRole"' &&
+          '}]}' .
 
-    " Tag bucket for cleanup
-    DATA lt_s3_tags TYPE /aws1/cl_s3_tag=>tt_tagset.
-    APPEND NEW /aws1/cl_s3_tag( iv_key = 'convert_test' iv_value = 'true' ) TO lt_s3_tags.
-    ao_s3->putbuckettagging(
-      iv_bucket = av_bucket_name
-      io_tagging = NEW /aws1/cl_s3_tagging( it_tagset = lt_s3_tags ) ).
+        " Create role - don't catch already exists, we want unique role
+        DATA(lo_create_role_result) = ao_iam->createrole(
+          iv_rolename = lv_role_name
+          iv_assumerolepolicydocument = lv_trust_policy
+          it_tags = VALUE /aws1/cl_iamtag=>tt_taglisttype(
+            ( NEW /aws1/cl_iamtag( iv_key = 'convert_test' iv_value = 'true' ) ) ) ).
+        av_role_arn = lo_create_role_result->get_role( )->get_arn( ).
 
-    " Create IAM role for S3 Batch Operations with unique name
-    DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
-    DATA(lv_role_name) = |sap-s3c-role-{ lv_uuid }|.
-    DATA(lv_policy_name) = |sap-s3c-pol-{ lv_uuid }|.
-    
-    DATA(lv_trust_policy) = '{' &&
-      '"Version":"2012-10-17",' &&
-      '"Statement":[{' &&
-        '"Effect":"Allow",' &&
-        '"Principal":{"Service":"batchoperations.s3.amazonaws.com"},' &&
-        '"Action":"sts:AssumeRole"' &&
-      '}]}' .
-
-    " Create role - don't catch already exists, we want unique role
-    DATA(lo_create_role_result) = ao_iam->createrole(
-      iv_rolename = lv_role_name
-      iv_assumerolepolicydocument = lv_trust_policy
-      it_tags = VALUE /aws1/cl_iamtag=>tt_taglisttype(
-        ( NEW /aws1/cl_iamtag( iv_key = 'convert_test' iv_value = 'true' ) ) ) ).
-    av_role_arn = lo_create_role_result->get_role( )->get_arn( ).
-
-    " Create comprehensive policy for S3 Batch Operations
-    DATA(lv_policy_document) = '{' &&
-      '"Version":"2012-10-17",' &&
-      '"Statement":[' &&
-        '{' &&
-          '"Effect":"Allow",' &&
-          '"Action":[' &&
-            '"s3:GetObject",' &&
-            '"s3:GetObjectVersion",' &&
-            '"s3:PutObject",' &&
-            '"s3:PutObjectAcl",' &&
-            '"s3:PutObjectVersionAcl",' &&
-            '"s3:PutObjectTagging",' &&
-            '"s3:PutObjectVersionTagging",' &&
-            '"s3:GetObjectTagging",' &&
-            '"s3:GetObjectVersionTagging",' &&
-            '"s3:DeleteObjectTagging",' &&
-            '"s3:DeleteObjectVersionTagging",' &&
-            '"s3:ListBucket",' &&
-            '"s3:ListBucketVersions",' &&
-            '"s3:GetBucketLocation",' &&
-            '"s3:GetBucketVersioning",' &&
-            '"s3:PutInventoryConfiguration",' &&
-            '"s3:GetInventoryConfiguration"' &&
-          '],' &&
-          '"Resource":[' &&
-            '"arn:aws:s3:::' && av_bucket_name && '",' &&
-            '"arn:aws:s3:::' && av_bucket_name && '/*"' &&
+        " Create comprehensive policy for S3 Batch Operations
+        DATA(lv_policy_document) = '{' &&
+          '"Version":"2012-10-17",' &&
+          '"Statement":[' &&
+            '{' &&
+              '"Effect":"Allow",' &&
+              '"Action":[' &&
+                '"s3:GetObject",' &&
+                '"s3:GetObjectVersion",' &&
+                '"s3:PutObject",' &&
+                '"s3:PutObjectAcl",' &&
+                '"s3:PutObjectVersionAcl",' &&
+                '"s3:PutObjectTagging",' &&
+                '"s3:PutObjectVersionTagging",' &&
+                '"s3:GetObjectTagging",' &&
+                '"s3:GetObjectVersionTagging",' &&
+                '"s3:DeleteObjectTagging",' &&
+                '"s3:DeleteObjectVersionTagging",' &&
+                '"s3:ListBucket",' &&
+                '"s3:ListBucketVersions",' &&
+                '"s3:GetBucketLocation",' &&
+                '"s3:GetBucketVersioning",' &&
+                '"s3:PutInventoryConfiguration",' &&
+                '"s3:GetInventoryConfiguration"' &&
+              '],' &&
+              '"Resource":[' &&
+                '"arn:aws:s3:::' && av_bucket_name && '",' &&
+                '"arn:aws:s3:::' && av_bucket_name && '/*"' &&
+              ']' &&
+            '}' &&
           ']' &&
-        '}' &&
-      ']' &&
-    '}' .
+        '}' .
 
-    DATA(lo_policy_result) = ao_iam->createpolicy(
-      iv_policyname = lv_policy_name
-      iv_policydocument = lv_policy_document
-      it_tags = VALUE /aws1/cl_iamtag=>tt_taglisttype(
-        ( NEW /aws1/cl_iamtag( iv_key = 'convert_test' iv_value = 'true' ) ) ) ).
+        DATA(lo_policy_result) = ao_iam->createpolicy(
+          iv_policyname = lv_policy_name
+          iv_policydocument = lv_policy_document
+          it_tags = VALUE /aws1/cl_iamtag=>tt_taglisttype(
+            ( NEW /aws1/cl_iamtag( iv_key = 'convert_test' iv_value = 'true' ) ) ) ).
 
-    ao_iam->attachrolepolicy(
-      iv_rolename = lv_role_name
-      iv_policyarn = lo_policy_result->get_policy( )->get_arn( ) ).
+        ao_iam->attachrolepolicy(
+          iv_rolename = lv_role_name
+          iv_policyarn = lo_policy_result->get_policy( )->get_arn( ) ).
 
-    " Wait for role and policy propagation (critical for S3 Batch)
-    WAIT UP TO 15 SECONDS.
+        " Wait for role and policy propagation (critical for S3 Batch)
+        WAIT UP TO 15 SECONDS.
 
-    " Create test files and manifest
-    CONSTANTS: cv_file1 TYPE /aws1/s3_objectkey VALUE 'test-file-1.txt',
-               cv_file2 TYPE /aws1/s3_objectkey VALUE 'test-file-2.txt',
-               cv_manifest TYPE /aws1/s3_objectkey VALUE 'job-manifest.csv'.
+        " Create test files and manifest
+        CONSTANTS: cv_file1 TYPE /aws1/s3_objectkey VALUE 'test-file-1.txt',
+                   cv_file2 TYPE /aws1/s3_objectkey VALUE 'test-file-2.txt',
+                   cv_manifest TYPE /aws1/s3_objectkey VALUE 'job-manifest.csv'.
 
-    " Upload test files (always recreate for fresh test)
-    DATA lv_file1_body TYPE xstring.
-    DATA lv_file2_body TYPE xstring.
-    DATA lv_manifest_body TYPE xstring.
-    
-    " Convert string content to xstring for S3
-    DATA(lv_file1_content) = 'Test content 1'.
-    DATA(lv_file2_content) = 'Test content 2'.
-    
-    CALL FUNCTION 'SCMS_STRING_TO_XSTRING'
-      EXPORTING
-        text   = lv_file1_content
-      IMPORTING
-        buffer = lv_file1_body.
-    
-    CALL FUNCTION 'SCMS_STRING_TO_XSTRING'
-      EXPORTING
-        text   = lv_file2_content
-      IMPORTING
-        buffer = lv_file2_body.
-    
-    ao_s3->putobject(
-      iv_bucket = av_bucket_name
-      iv_key = cv_file1
-      iv_body = lv_file1_body ).
+        " Upload test files (always recreate for fresh test)
+        DATA lv_file1_body TYPE xstring.
+        DATA lv_file2_body TYPE xstring.
+        DATA lv_manifest_body TYPE xstring.
+        
+        " Convert string content to xstring for S3
+        DATA(lv_file1_content) = 'Test content 1'.
+        DATA(lv_file2_content) = 'Test content 2'.
+        
+        CALL FUNCTION 'SCMS_STRING_TO_XSTRING'
+          EXPORTING
+            text   = lv_file1_content
+          IMPORTING
+            buffer = lv_file1_body.
+        
+        CALL FUNCTION 'SCMS_STRING_TO_XSTRING'
+          EXPORTING
+            text   = lv_file2_content
+          IMPORTING
+            buffer = lv_file2_body.
+        
+        ao_s3->putobject(
+          iv_bucket = av_bucket_name
+          iv_key = cv_file1
+          iv_body = lv_file1_body ).
 
-    ao_s3->putobject(
-      iv_bucket = av_bucket_name
-      iv_key = cv_file2
-      iv_body = lv_file2_body ).
+        ao_s3->putobject(
+          iv_bucket = av_bucket_name
+          iv_key = cv_file2
+          iv_body = lv_file2_body ).
 
-    " Create and upload manifest
-    DATA(lv_manifest_content) = |{ av_bucket_name },{ cv_file1 }\n| &&
-                                 |{ av_bucket_name },{ cv_file2 }|.
+        " Create and upload manifest
+        DATA(lv_manifest_content) = |{ av_bucket_name },{ cv_file1 }\n| &&
+                                     |{ av_bucket_name },{ cv_file2 }|.
 
-    CALL FUNCTION 'SCMS_STRING_TO_XSTRING'
-      EXPORTING
-        text   = lv_manifest_content
-      IMPORTING
-        buffer = lv_manifest_body.
-    
-    DATA(lo_manifest_result) = ao_s3->putobject(
-      iv_bucket = av_bucket_name
-      iv_key = cv_manifest
-      iv_body = lv_manifest_body ).
+        CALL FUNCTION 'SCMS_STRING_TO_XSTRING'
+          EXPORTING
+            text   = lv_manifest_content
+          IMPORTING
+            buffer = lv_manifest_body.
+        
+        DATA(lo_manifest_result) = ao_s3->putobject(
+          iv_bucket = av_bucket_name
+          iv_key = cv_manifest
+          iv_body = lv_manifest_body ).
 
-    av_manifest_etag = lo_manifest_result->get_etag( ).
-    " Remove quotes from ETag if present
-    REPLACE ALL OCCURRENCES OF '"' IN av_manifest_etag WITH ''.
+        av_manifest_etag = lo_manifest_result->get_etag( ).
+        " Remove quotes from ETag if present
+        REPLACE ALL OCCURRENCES OF '"' IN av_manifest_etag WITH ''.
 
-    " Ensure manifest ETag is valid
-    IF av_manifest_etag IS INITIAL.
-      cl_abap_unit_assert=>fail(
-        msg = 'Failed to create manifest file with valid ETag' ).
-    ENDIF.
+        " Ensure manifest ETag is valid
+        IF av_manifest_etag IS INITIAL.
+          cl_abap_unit_assert=>fail(
+            msg = 'Failed to create manifest file with valid ETag' ).
+        ENDIF.
+      CATCH /aws1/cx_iamentityalrdyexex INTO DATA(lo_iam_ex).
+        cl_abap_unit_assert=>fail(
+          msg = |IAM Entity Already Exists: { lo_iam_ex->if_message~get_text( ) }| ).
+      CATCH /aws1/cx_iammalformedplydocex INTO DATA(lo_policy_ex).
+        cl_abap_unit_assert=>fail(
+          msg = |IAM Malformed Policy: { lo_policy_ex->if_message~get_text( ) }| ).
+    ENDTRY.
 
   ENDMETHOD.
 
