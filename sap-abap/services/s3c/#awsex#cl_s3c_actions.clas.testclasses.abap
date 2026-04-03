@@ -167,11 +167,15 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
         DATA lv_file1_body TYPE xstring.
         DATA lv_file2_body TYPE xstring.
         DATA lv_manifest_body TYPE xstring.
+        DATA lv_file1_content TYPE string.
+        DATA lv_file2_content TYPE string.
+        DATA lv_manifest_content TYPE string.
+        
+        " Set string content
+        lv_file1_content = 'Test content 1'.
+        lv_file2_content = 'Test content 2'.
         
         " Convert string content to xstring for S3
-        DATA(lv_file1_content) = 'Test content 1'.
-        DATA(lv_file2_content) = 'Test content 2'.
-        
         CALL FUNCTION 'SCMS_STRING_TO_XSTRING'
           EXPORTING
             text   = lv_file1_content
@@ -195,8 +199,8 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
           iv_body = lv_file2_body ).
 
         " Create and upload manifest
-        DATA(lv_manifest_content) = |{ av_bucket_name },{ cv_file1 }\n| &&
-                                     |{ av_bucket_name },{ cv_file2 }|.
+        lv_manifest_content = |{ av_bucket_name },{ cv_file1 }\n| &&
+                              |{ av_bucket_name },{ cv_file2 }|.
 
         CALL FUNCTION 'SCMS_STRING_TO_XSTRING'
           EXPORTING
