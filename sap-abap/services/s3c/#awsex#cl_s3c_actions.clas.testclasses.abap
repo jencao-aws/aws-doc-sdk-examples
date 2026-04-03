@@ -306,16 +306,21 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
     DATA(lv_region) = ao_session->get_region( ).
     lv_manifest_arn = |arn:aws:s3:::{ av_bucket_name }/job-manifest.csv|.
 
-    ao_s3c_actions->create_job(
-      EXPORTING
-        iv_account_id = av_account_id
-        iv_role_arn = av_role_arn
-        iv_manifest_etag = av_manifest_etag
-        iv_manifest_object_arn = lv_manifest_arn
-        iv_report_bucket = |arn:aws:s3:::{ av_bucket_name }|
-        io_s3c = ao_s3c
-      IMPORTING
-        oo_result = lo_result ).
+    TRY.
+        ao_s3c_actions->create_job(
+          EXPORTING
+            iv_account_id = av_account_id
+            iv_role_arn = av_role_arn
+            iv_manifest_etag = av_manifest_etag
+            iv_manifest_object_arn = lv_manifest_arn
+            iv_report_bucket = |arn:aws:s3:::{ av_bucket_name }|
+            io_s3c = ao_s3c
+          IMPORTING
+            oo_result = lo_result ).
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_exception).
+        cl_abap_unit_assert=>fail(
+          msg = |Create job failed: { lo_exception->get_text( ) }| ).
+    ENDTRY.
 
     cl_abap_unit_assert=>assert_bound(
       act = lo_result
@@ -362,12 +367,17 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
   METHOD list_jobs.
     DATA lo_result TYPE REF TO /aws1/cl_s3clistjobsresult.
 
-    ao_s3c_actions->list_jobs(
-      EXPORTING
-        iv_account_id = av_account_id
-        io_s3c = ao_s3c
-      IMPORTING
-        oo_result = lo_result ).
+    TRY.
+        ao_s3c_actions->list_jobs(
+          EXPORTING
+            iv_account_id = av_account_id
+            io_s3c = ao_s3c
+          IMPORTING
+            oo_result = lo_result ).
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_exception).
+        cl_abap_unit_assert=>fail(
+          msg = |List jobs failed: { lo_exception->get_text( ) }| ).
+    ENDTRY.
 
     cl_abap_unit_assert=>assert_bound(
       act = lo_result
