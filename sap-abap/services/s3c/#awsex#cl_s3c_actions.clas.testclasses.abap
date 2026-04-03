@@ -90,13 +90,6 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
         ao_s3->putbuckettagging(
           iv_bucket = av_bucket_name
           io_tagging = NEW /aws1/cl_s3_tagging( it_tagset = lt_s3_tags ) ).
-      CATCH /aws1/cx_s3_clientexc INTO DATA(lo_client_ex).
-        cl_abap_unit_assert=>fail(
-          msg = |S3 Client Exception during setup: { lo_client_ex->if_message~get_text( ) }| ).
-      CATCH /aws1/cx_rt_generic INTO DATA(lo_generic_ex).
-        cl_abap_unit_assert=>fail(
-          msg = |Generic Exception during setup: { lo_generic_ex->if_message~get_text( ) }| ).
-    ENDTRY.
 
         " Create IAM role for S3 Batch Operations with unique name
         DATA(lv_uuid) = /awsex/cl_utils=>get_random_string( ).
@@ -225,12 +218,19 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
           cl_abap_unit_assert=>fail(
             msg = 'Failed to create manifest file with valid ETag' ).
         ENDIF.
+
+      CATCH /aws1/cx_s3_clientexc INTO DATA(lo_client_ex).
+        cl_abap_unit_assert=>fail(
+          msg = |S3 Client Exception during setup: { lo_client_ex->if_message~get_text( ) }| ).
       CATCH /aws1/cx_iamentityalrdyexex INTO DATA(lo_iam_ex).
         cl_abap_unit_assert=>fail(
           msg = |IAM Entity Already Exists: { lo_iam_ex->if_message~get_text( ) }| ).
       CATCH /aws1/cx_iammalformedplydocex INTO DATA(lo_policy_ex).
         cl_abap_unit_assert=>fail(
           msg = |IAM Malformed Policy: { lo_policy_ex->if_message~get_text( ) }| ).
+      CATCH /aws1/cx_rt_generic INTO DATA(lo_generic_ex).
+        cl_abap_unit_assert=>fail(
+          msg = |Generic Exception during setup: { lo_generic_ex->if_message~get_text( ) }| ).
     ENDTRY.
 
   ENDMETHOD.
