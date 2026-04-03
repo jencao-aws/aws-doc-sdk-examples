@@ -156,24 +156,50 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
                cv_manifest TYPE /aws1/s3_objectkey VALUE 'job-manifest.csv'.
 
     " Upload test files (always recreate for fresh test)
+    DATA lv_file1_body TYPE xstring.
+    DATA lv_file2_body TYPE xstring.
+    DATA lv_manifest_body TYPE xstring.
+    
+    " Convert string content to xstring for S3
+    DATA(lv_file1_content) = 'Test content 1'.
+    DATA(lv_file2_content) = 'Test content 2'.
+    
+    CALL FUNCTION 'SCMS_STRING_TO_XSTRING'
+      EXPORTING
+        text   = lv_file1_content
+      IMPORTING
+        buffer = lv_file1_body.
+    
+    CALL FUNCTION 'SCMS_STRING_TO_XSTRING'
+      EXPORTING
+        text   = lv_file2_content
+      IMPORTING
+        buffer = lv_file2_body.
+    
     ao_s3->putobject(
       iv_bucket = av_bucket_name
       iv_key = cv_file1
-      iv_body = 'Test content 1' ).
+      iv_body = lv_file1_body ).
 
     ao_s3->putobject(
       iv_bucket = av_bucket_name
       iv_key = cv_file2
-      iv_body = 'Test content 2' ).
+      iv_body = lv_file2_body ).
 
     " Create and upload manifest
     DATA(lv_manifest_content) = |{ av_bucket_name },{ cv_file1 }\n| &&
                                  |{ av_bucket_name },{ cv_file2 }|.
 
+    CALL FUNCTION 'SCMS_STRING_TO_XSTRING'
+      EXPORTING
+        text   = lv_manifest_content
+      IMPORTING
+        buffer = lv_manifest_body.
+    
     DATA(lo_manifest_result) = ao_s3->putobject(
       iv_bucket = av_bucket_name
       iv_key = cv_manifest
-      iv_body = lv_manifest_content ).
+      iv_body = lv_manifest_body ).
 
     av_manifest_etag = lo_manifest_result->get_etag( ).
     " Remove quotes from ETag if present
