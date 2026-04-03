@@ -313,6 +313,7 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
         iv_manifest_etag = av_manifest_etag
         iv_manifest_object_arn = lv_manifest_arn
         iv_report_bucket = |arn:aws:s3:::{ av_bucket_name }|
+        io_s3c = ao_s3c
       IMPORTING
         oo_result = lo_result ).
 
@@ -338,6 +339,7 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
       EXPORTING
         iv_account_id = av_account_id
         iv_job_id = av_test_job_id
+        io_s3c = ao_s3c
       IMPORTING
         oo_result = lo_result ).
 
@@ -363,6 +365,7 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
     ao_s3c_actions->list_jobs(
       EXPORTING
         iv_account_id = av_account_id
+        io_s3c = ao_s3c
       IMPORTING
         oo_result = lo_result ).
 
@@ -402,6 +405,7 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
         iv_account_id = av_account_id
         iv_job_id = av_test_job_id
         iv_priority = 60
+        io_s3c = ao_s3c
       IMPORTING
         oo_result = lo_result ).
 
@@ -433,6 +437,7 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
         iv_account_id = av_account_id
         iv_job_id = av_test_job_id
         iv_requested_job_status = 'Cancelled'
+        io_s3c = ao_s3c
       IMPORTING
         oo_result = lo_result ).
 
@@ -458,6 +463,7 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
       EXPORTING
         iv_account_id = av_account_id
         iv_job_id = av_test_job_id
+        io_s3c = ao_s3c
       IMPORTING
         oo_result = lo_result ).
 
@@ -478,6 +484,7 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
       EXPORTING
         iv_account_id = av_account_id
         iv_job_id = av_test_job_id
+        io_s3c = ao_s3c
       IMPORTING
         oo_result = lo_result ).
 
@@ -513,6 +520,7 @@ CLASS ltc_awsex_cl_s3c_actions IMPLEMENTATION.
       EXPORTING
         iv_account_id = av_account_id
         iv_job_id = av_test_job_id
+        io_s3c = ao_s3c
       IMPORTING
         oo_result = lo_result ).
 

@@ -17,6 +17,7 @@ CLASS /awsex/cl_s3c_actions DEFINITION
         !iv_report_bucket      TYPE /aws1/s3cs3bucketarnstring
         !iv_operation_tag_key  TYPE /aws1/s3ctagkeystring DEFAULT 'BatchTag'
         !iv_operation_tag_value TYPE /aws1/s3ctagvaluestring DEFAULT 'BatchValue'
+        !io_s3c                TYPE REF TO /aws1/if_s3c OPTIONAL
       EXPORTING
         !oo_result             TYPE REF TO /aws1/cl_s3ccreatejobresult
       RAISING
@@ -26,6 +27,7 @@ CLASS /awsex/cl_s3c_actions DEFINITION
       IMPORTING
         !iv_account_id TYPE /aws1/s3caccountid
         !iv_job_id     TYPE /aws1/s3cjobid
+        !io_s3c        TYPE REF TO /aws1/if_s3c OPTIONAL
       EXPORTING
         !oo_result     TYPE REF TO /aws1/cl_s3cdescribejobresult
       RAISING
@@ -34,6 +36,7 @@ CLASS /awsex/cl_s3c_actions DEFINITION
     METHODS list_jobs
       IMPORTING
         !iv_account_id TYPE /aws1/s3caccountid
+        !io_s3c        TYPE REF TO /aws1/if_s3c OPTIONAL
       EXPORTING
         !oo_result     TYPE REF TO /aws1/cl_s3clistjobsresult
       RAISING
@@ -44,6 +47,7 @@ CLASS /awsex/cl_s3c_actions DEFINITION
         !iv_account_id TYPE /aws1/s3caccountid
         !iv_job_id     TYPE /aws1/s3cjobid
         !iv_priority   TYPE /aws1/s3cjobpriority DEFAULT 60
+        !io_s3c        TYPE REF TO /aws1/if_s3c OPTIONAL
       EXPORTING
         !oo_result     TYPE REF TO /aws1/cl_s3cupdjobpriorityrslt
       RAISING
@@ -54,6 +58,7 @@ CLASS /awsex/cl_s3c_actions DEFINITION
         !iv_account_id          TYPE /aws1/s3caccountid
         !iv_job_id              TYPE /aws1/s3cjobid
         !iv_requested_job_status TYPE /aws1/s3crequestedjobstatus
+        !io_s3c                 TYPE REF TO /aws1/if_s3c OPTIONAL
       EXPORTING
         !oo_result              TYPE REF TO /aws1/cl_s3cupdjobstatusrslt
       RAISING
@@ -63,6 +68,7 @@ CLASS /awsex/cl_s3c_actions DEFINITION
       IMPORTING
         !iv_account_id TYPE /aws1/s3caccountid
         !iv_job_id     TYPE /aws1/s3cjobid
+        !io_s3c        TYPE REF TO /aws1/if_s3c OPTIONAL
       EXPORTING
         !oo_result     TYPE REF TO /aws1/cl_s3cgetjobtagresult
       RAISING
@@ -72,6 +78,7 @@ CLASS /awsex/cl_s3c_actions DEFINITION
       IMPORTING
         !iv_account_id TYPE /aws1/s3caccountid
         !iv_job_id     TYPE /aws1/s3cjobid
+        !io_s3c        TYPE REF TO /aws1/if_s3c OPTIONAL
       EXPORTING
         !oo_result     TYPE REF TO /aws1/cl_s3cputjobtagresult
       RAISING
@@ -81,6 +88,7 @@ CLASS /awsex/cl_s3c_actions DEFINITION
       IMPORTING
         !iv_account_id TYPE /aws1/s3caccountid
         !iv_job_id     TYPE /aws1/s3cjobid
+        !io_s3c        TYPE REF TO /aws1/if_s3c OPTIONAL
       EXPORTING
         !oo_result     TYPE REF TO /aws1/cl_s3cdeletejobtagresult
       RAISING
@@ -98,8 +106,14 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
   METHOD create_job.
     CONSTANTS cv_pfl TYPE /aws1/rt_profile_id VALUE 'ZCODE_DEMO'.
 
-    DATA(lo_session) = /aws1/cl_rt_session_aws=>create( cv_pfl ).
-    DATA(lo_s3c) = /aws1/cl_s3c_factory=>create( lo_session ).
+    DATA lo_s3c TYPE REF TO /aws1/if_s3c.
+    
+    IF io_s3c IS BOUND.
+      lo_s3c = io_s3c.
+    ELSE.
+      DATA(lo_session) = /aws1/cl_rt_session_aws=>create( cv_pfl ).
+      lo_s3c = /aws1/cl_s3c_factory=>create( lo_session ).
+    ENDIF.
 
     " snippet-start:[s3c.abapv1.create_job]
     TRY.
@@ -134,12 +148,14 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
               iv_objectarn = iv_manifest_object_arn
               iv_etag = iv_manifest_etag ) ) ).
 
-        DATA(lv_job_id) = oo_result->get_jobid( ).
-        MESSAGE |Job created with ID: { lv_job_id }| TYPE 'I'.
-      CATCH /aws1/cx_s3cidempotencyex.
-        MESSAGE 'Idempotency exception occurred.' TYPE 'E'.
-      CATCH /aws1/cx_s3cinternalserviceex.
-        MESSAGE 'Internal service exception occurred.' TYPE 'E'.
+        IF oo_result IS BOUND.
+          DATA(lv_job_id) = oo_result->get_jobid( ).
+          MESSAGE |Job created with ID: { lv_job_id }| TYPE 'I'.
+        ENDIF.
+      CATCH /aws1/cx_s3cidempotencyex INTO DATA(lo_idempotency_ex).
+        MESSAGE lo_idempotency_ex TYPE 'I'.
+      CATCH /aws1/cx_s3cinternalserviceex INTO DATA(lo_service_ex).
+        MESSAGE lo_service_ex TYPE 'I'.
     ENDTRY.
     " snippet-end:[s3c.abapv1.create_job]
   ENDMETHOD.
@@ -148,8 +164,14 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
   METHOD describe_job.
     CONSTANTS cv_pfl TYPE /aws1/rt_profile_id VALUE 'ZCODE_DEMO'.
 
-    DATA(lo_session) = /aws1/cl_rt_session_aws=>create( cv_pfl ).
-    DATA(lo_s3c) = /aws1/cl_s3c_factory=>create( lo_session ).
+    DATA lo_s3c TYPE REF TO /aws1/if_s3c.
+    
+    IF io_s3c IS BOUND.
+      lo_s3c = io_s3c.
+    ELSE.
+      DATA(lo_session) = /aws1/cl_rt_session_aws=>create( cv_pfl ).
+      lo_s3c = /aws1/cl_s3c_factory=>create( lo_session ).
+    ENDIF.
 
     " snippet-start:[s3c.abapv1.describe_job]
     TRY.
@@ -173,8 +195,8 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
             MESSAGE |Job { iv_job_id } Status: { lv_status }| TYPE 'I'.
           ENDIF.
         ENDIF.
-      CATCH /aws1/cx_s3cnotfoundexception.
-        MESSAGE 'Job not found.' TYPE 'E'.
+      CATCH /aws1/cx_s3cnotfoundexception INTO DATA(lo_notfound_ex).
+        MESSAGE lo_notfound_ex TYPE 'I'.
     ENDTRY.
     " snippet-end:[s3c.abapv1.describe_job]
   ENDMETHOD.
@@ -183,8 +205,14 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
   METHOD list_jobs.
     CONSTANTS cv_pfl TYPE /aws1/rt_profile_id VALUE 'ZCODE_DEMO'.
 
-    DATA(lo_session) = /aws1/cl_rt_session_aws=>create( cv_pfl ).
-    DATA(lo_s3c) = /aws1/cl_s3c_factory=>create( lo_session ).
+    DATA lo_s3c TYPE REF TO /aws1/if_s3c.
+    
+    IF io_s3c IS BOUND.
+      lo_s3c = io_s3c.
+    ELSE.
+      DATA(lo_session) = /aws1/cl_rt_session_aws=>create( cv_pfl ).
+      lo_s3c = /aws1/cl_s3c_factory=>create( lo_session ).
+    ENDIF.
 
     " snippet-start:[s3c.abapv1.list_jobs]
     TRY.
@@ -201,11 +229,13 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
           iv_accountid = iv_account_id
           it_jobstatuses = lt_job_statuses ).
 
-        DATA(lt_jobs) = oo_result->get_jobs( ).
-        DATA(lv_job_count) = lines( lt_jobs ).
-        MESSAGE |Found { lv_job_count } jobs| TYPE 'I'.
-      CATCH /aws1/cx_s3cinvalidrequestex.
-        MESSAGE 'Invalid request exception.' TYPE 'E'.
+        IF oo_result IS BOUND.
+          DATA(lt_jobs) = oo_result->get_jobs( ).
+          DATA(lv_job_count) = lines( lt_jobs ).
+          MESSAGE |Found { lv_job_count } jobs| TYPE 'I'.
+        ENDIF.
+      CATCH /aws1/cx_s3cinvalidrequestex INTO DATA(lo_invalid_ex).
+        MESSAGE lo_invalid_ex TYPE 'I'.
     ENDTRY.
     " snippet-end:[s3c.abapv1.list_jobs]
   ENDMETHOD.
@@ -214,8 +244,14 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
   METHOD update_job_priority.
     CONSTANTS cv_pfl TYPE /aws1/rt_profile_id VALUE 'ZCODE_DEMO'.
 
-    DATA(lo_session) = /aws1/cl_rt_session_aws=>create( cv_pfl ).
-    DATA(lo_s3c) = /aws1/cl_s3c_factory=>create( lo_session ).
+    DATA lo_s3c TYPE REF TO /aws1/if_s3c.
+    
+    IF io_s3c IS BOUND.
+      lo_s3c = io_s3c.
+    ELSE.
+      DATA(lo_session) = /aws1/cl_rt_session_aws=>create( cv_pfl ).
+      lo_s3c = /aws1/cl_s3c_factory=>create( lo_session ).
+    ENDIF.
 
     " snippet-start:[s3c.abapv1.update_job_priority]
     TRY.
@@ -226,10 +262,10 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
 
         DATA(lv_new_priority) = oo_result->get_priority( ).
         MESSAGE |Job priority updated to { lv_new_priority }| TYPE 'I'.
-      CATCH /aws1/cx_s3cnotfoundexception.
-        MESSAGE 'Job not found.' TYPE 'E'.
-      CATCH /aws1/cx_s3cjobstatusexception.
-        MESSAGE 'Job status does not allow priority update.' TYPE 'E'.
+      CATCH /aws1/cx_s3cnotfoundexception INTO DATA(lo_notfound_ex).
+        MESSAGE lo_notfound_ex TYPE 'I'.
+      CATCH /aws1/cx_s3cjobstatusexception INTO DATA(lo_status_ex).
+        MESSAGE lo_status_ex TYPE 'I'.
     ENDTRY.
     " snippet-end:[s3c.abapv1.update_job_priority]
   ENDMETHOD.
@@ -238,8 +274,14 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
   METHOD update_job_status.
     CONSTANTS cv_pfl TYPE /aws1/rt_profile_id VALUE 'ZCODE_DEMO'.
 
-    DATA(lo_session) = /aws1/cl_rt_session_aws=>create( cv_pfl ).
-    DATA(lo_s3c) = /aws1/cl_s3c_factory=>create( lo_session ).
+    DATA lo_s3c TYPE REF TO /aws1/if_s3c.
+    
+    IF io_s3c IS BOUND.
+      lo_s3c = io_s3c.
+    ELSE.
+      DATA(lo_session) = /aws1/cl_rt_session_aws=>create( cv_pfl ).
+      lo_s3c = /aws1/cl_s3c_factory=>create( lo_session ).
+    ENDIF.
 
     " snippet-start:[s3c.abapv1.update_job_status]
     TRY.
@@ -250,10 +292,10 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
 
         DATA(lv_updated_status) = oo_result->get_status( ).
         MESSAGE |Job status updated to { lv_updated_status }| TYPE 'I'.
-      CATCH /aws1/cx_s3cnotfoundexception.
-        MESSAGE 'Job not found.' TYPE 'E'.
-      CATCH /aws1/cx_s3cjobstatusexception.
-        MESSAGE 'Invalid job status transition.' TYPE 'E'.
+      CATCH /aws1/cx_s3cnotfoundexception INTO DATA(lo_notfound_ex).
+        MESSAGE lo_notfound_ex TYPE 'I'.
+      CATCH /aws1/cx_s3cjobstatusexception INTO DATA(lo_status_ex).
+        MESSAGE lo_status_ex TYPE 'I'.
     ENDTRY.
     " snippet-end:[s3c.abapv1.update_job_status]
   ENDMETHOD.
@@ -262,8 +304,14 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
   METHOD get_job_tagging.
     CONSTANTS cv_pfl TYPE /aws1/rt_profile_id VALUE 'ZCODE_DEMO'.
 
-    DATA(lo_session) = /aws1/cl_rt_session_aws=>create( cv_pfl ).
-    DATA(lo_s3c) = /aws1/cl_s3c_factory=>create( lo_session ).
+    DATA lo_s3c TYPE REF TO /aws1/if_s3c.
+    
+    IF io_s3c IS BOUND.
+      lo_s3c = io_s3c.
+    ELSE.
+      DATA(lo_session) = /aws1/cl_rt_session_aws=>create( cv_pfl ).
+      lo_s3c = /aws1/cl_s3c_factory=>create( lo_session ).
+    ENDIF.
 
     " snippet-start:[s3c.abapv1.get_job_tagging]
     TRY.
@@ -274,8 +322,8 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
         DATA(lt_tags) = oo_result->get_tags( ).
         DATA(lv_tag_count) = lines( lt_tags ).
         MESSAGE |Job has { lv_tag_count } tags| TYPE 'I'.
-      CATCH /aws1/cx_s3cnotfoundexception.
-        MESSAGE 'Job not found.' TYPE 'E'.
+      CATCH /aws1/cx_s3cnotfoundexception INTO DATA(lo_notfound_ex).
+        MESSAGE lo_notfound_ex TYPE 'I'.
     ENDTRY.
     " snippet-end:[s3c.abapv1.get_job_tagging]
   ENDMETHOD.
@@ -284,8 +332,14 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
   METHOD put_job_tagging.
     CONSTANTS cv_pfl TYPE /aws1/rt_profile_id VALUE 'ZCODE_DEMO'.
 
-    DATA(lo_session) = /aws1/cl_rt_session_aws=>create( cv_pfl ).
-    DATA(lo_s3c) = /aws1/cl_s3c_factory=>create( lo_session ).
+    DATA lo_s3c TYPE REF TO /aws1/if_s3c.
+    
+    IF io_s3c IS BOUND.
+      lo_s3c = io_s3c.
+    ELSE.
+      DATA(lo_session) = /aws1/cl_rt_session_aws=>create( cv_pfl ).
+      lo_s3c = /aws1/cl_s3c_factory=>create( lo_session ).
+    ENDIF.
 
     " snippet-start:[s3c.abapv1.put_job_tagging]
     TRY.
@@ -300,10 +354,10 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
           it_tags = lt_tags ).
 
         MESSAGE 'Job tags added successfully.' TYPE 'I'.
-      CATCH /aws1/cx_s3cnotfoundexception.
-        MESSAGE 'Job not found.' TYPE 'E'.
-      CATCH /aws1/cx_s3ctoomanytagsex.
-        MESSAGE 'Too many tags for job.' TYPE 'E'.
+      CATCH /aws1/cx_s3cnotfoundexception INTO DATA(lo_notfound_ex).
+        MESSAGE lo_notfound_ex TYPE 'I'.
+      CATCH /aws1/cx_s3ctoomanytagsex INTO DATA(lo_toomany_ex).
+        MESSAGE lo_toomany_ex TYPE 'I'.
     ENDTRY.
     " snippet-end:[s3c.abapv1.put_job_tagging]
   ENDMETHOD.
@@ -312,8 +366,14 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
   METHOD delete_job_tagging.
     CONSTANTS cv_pfl TYPE /aws1/rt_profile_id VALUE 'ZCODE_DEMO'.
 
-    DATA(lo_session) = /aws1/cl_rt_session_aws=>create( cv_pfl ).
-    DATA(lo_s3c) = /aws1/cl_s3c_factory=>create( lo_session ).
+    DATA lo_s3c TYPE REF TO /aws1/if_s3c.
+    
+    IF io_s3c IS BOUND.
+      lo_s3c = io_s3c.
+    ELSE.
+      DATA(lo_session) = /aws1/cl_rt_session_aws=>create( cv_pfl ).
+      lo_s3c = /aws1/cl_s3c_factory=>create( lo_session ).
+    ENDIF.
 
     " snippet-start:[s3c.abapv1.delete_job_tagging]
     TRY.
@@ -322,8 +382,8 @@ CLASS /AWSEX/CL_S3C_ACTIONS IMPLEMENTATION.
           iv_jobid = iv_job_id ).
 
         MESSAGE 'Job tags deleted successfully.' TYPE 'I'.
-      CATCH /aws1/cx_s3cnotfoundexception.
-        MESSAGE 'Job not found.' TYPE 'E'.
+      CATCH /aws1/cx_s3cnotfoundexception INTO DATA(lo_notfound_ex).
+        MESSAGE lo_notfound_ex TYPE 'I'.
     ENDTRY.
     " snippet-end:[s3c.abapv1.delete_job_tagging]
   ENDMETHOD.
